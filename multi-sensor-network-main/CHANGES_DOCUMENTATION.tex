@@ -1,0 +1,676 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{enumitem}
+
+\geometry{margin=1in}
+
+% Code listing style
+\lstset{
+    language=JavaScript,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=5pt,
+    backgroundcolor=\color{gray!10},
+    frame=single,
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=2,
+    showstringspaces=false
+}
+
+\title{Multi-Sensor Network Project:\\
+Deployment Changes and Technical Documentation}
+\author{Project Migration Documentation}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+\section{Executive Summary}
+
+This document provides a comprehensive explanation of all changes made to the Multi-Sensor Network project to resolve deployment issues and restructure the codebase for proper Vercel serverless deployment. The project was migrated from a traditional Express.js server architecture to a Vercel-compatible serverless function architecture, and all website assets were consolidated into the \texttt{gateway-server} directory.
+
+\section{Initial Situation}
+
+\subsection{Project Structure (Before Changes)}
+
+The project initially had the following structure:
+
+\begin{lstlisting}[language=bash, basicstyle=\ttfamily\footnotesize]
+multi-sensor-network-main/
+├── data/                    # Website files (HTML, CSS, JS)
+│   ├── index.html
+│   ├── script.js
+│   └── style.css
+├── gateway-server/          # Express.js server
+│   ├── index.js            # Main server file
+│   ├── package.json
+│   └── node_modules/
+├── src/                     # ESP32 source code
+├── include/                 # Header files
+└── platformio.ini          # PlatformIO configuration
+\end{lstlisting}
+
+\subsection{The Problem: DEPLOYMENT\_NOT\_FOUND Error}
+
+\subsubsection{Error Details}
+\begin{itemize}
+    \item \textbf{Error Code:} 404: NOT\_FOUND
+    \item \textbf{Platform:} Vercel
+    \item \textbf{Symptom:} Deployment failed with "DEPLOYMENT\_NOT\_FOUND" error
+    \item \textbf{Local Status:} Server worked perfectly on \texttt{localhost:3000}
+\end{itemize}
+
+\subsubsection{Root Cause Analysis}
+
+The error occurred due to fundamental architectural incompatibility:
+
+\begin{enumerate}
+    \item \textbf{Express Server Architecture:}
+    \begin{itemize}
+        \item The code used \texttt{app.listen()} to create a persistent server
+        \item In-memory state management (\texttt{clients} Set)
+        \item Server-Sent Events (SSE) with persistent connections
+        \item Traditional request-response cycle with stateful connections
+    \end{itemize}
+    
+    \item \textbf{Vercel Serverless Architecture:}
+    \begin{itemize}
+        \item Vercel expects serverless functions in \texttt{/api/} directory
+        \item Each function is stateless and isolated
+        \item Maximum execution time: 10 seconds (Hobby) or 60 seconds (Pro)
+        \item No persistent connections or in-memory state between invocations
+        \item Functions start, execute, and terminate per request
+    \end{itemize}
+    
+    \item \textbf{The Mismatch:}
+    \begin{itemize}
+        \item Vercel looked for serverless functions but found an Express app
+        \item No \texttt{vercel.json} configuration at repository root
+        \item No \texttt{/api/} directory with serverless functions
+        \item Result: 404 DEPLOYMENT\_NOT\_FOUND
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Initial Server Code}
+
+The original \texttt{gateway-server/index.js} contained:
+
+\begin{lstlisting}
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Serve static files from the data directory
+app.use(express.static(path.join(__dirname, "..", "data")));
+
+const clients = new Set();  // In-memory state
+
+app.post("/ingest", (req, res) => {
+  // ... handler code
+  clients.forEach((r) => r.write(payload));  // Uses persistent state
+  res.json({ ok: true });
+});
+
+app.get("/events", (req, res) => {
+  // Server-Sent Events - persistent connection
+  res.set({ "Content-Type": "text/event-stream", ... });
+  clients.add(res);  // Maintains connection in memory
+  req.on("close", () => clients.delete(res));
+});
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "..", "data", "index.html"));
+});
+
+app.listen(PORT, () => console.log(`Server on :${PORT}`));
+\end{lstlisting}
+
+\textbf{Problems with this code for Vercel:}
+\begin{itemize}
+    \item \texttt{app.listen()} - Vercel doesn't run persistent servers
+    \item \texttt{clients} Set - State lost between function invocations
+    \item SSE connections - Cannot be maintained (execution time limits)
+    \item Static file serving from \texttt{../data} - Wrong path structure
+\end{itemize}
+
+\section{Changes Made}
+
+\subsection{Change 1: Created Vercel Serverless Functions}
+
+\subsubsection{Created \texttt{/api/} Directory Structure}
+
+Created three serverless functions in the repository root:
+
+\begin{lstlisting}[language=bash, basicstyle=\ttfamily\footnotesize]
+api/
+├── ingest.js    # POST /api/ingest - Sensor data ingestion
+├── status.js    # GET /api/status - API status endpoint
+└── events.js    # GET /api/events - SSE endpoint (with limitations)
+\end{lstlisting}
+
+\subsubsection{Function: \texttt{api/ingest.js}}
+
+\begin{lstlisting}
+export default async function handler(req, res) {
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ ok: false, error: 'Method not allowed' });
+  }
+
+  const m = req.body;
+  if (!m || typeof m.co2 !== 'number') {
+    return res.status(400).json({ ok: false, error: 'Invalid payload' });
+  }
+
+  console.log('INGEST:', req.body);
+  
+  // Note: Cannot maintain persistent connections in serverless
+  // Original clients.forEach() removed - state not available
+  
+  return res.status(200).json({ ok: true });
+}
+\end{lstlisting}
+
+\textbf{Key Changes:}
+\begin{itemize}
+    \item Exports default async handler function (Vercel requirement)
+    \item Removed in-memory state usage (\texttt{clients} Set)
+    \item Added CORS headers explicitly
+    \item Stateless function design
+\end{itemize}
+
+\subsubsection{Function: \texttt{api/status.js}}
+
+\begin{lstlisting}
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  return res.status(200).json({
+    status: 'ok',
+    platform: 'vercel',
+    note: 'Real-time SSE connections are not supported on Vercel',
+    endpoints: {
+      ingest: 'POST /api/ingest',
+      status: 'GET /api/status',
+      dashboard: 'GET /'
+    }
+  });
+}
+\end{lstlisting}
+
+\subsubsection{Function: \texttt{api/events.js}}
+
+\begin{lstlisting}
+// WARNING: Server-Sent Events don't work properly on Vercel
+// due to execution time limits (10-60 seconds max)
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Note: This will timeout on Vercel due to execution limits
+  res.write('retry: 1000\n\n');
+  res.write(`data: ${JSON.stringify({ 
+    message: 'SSE not fully supported on Vercel serverless',
+    recommendation: 'Use polling or external WebSocket service'
+  })}\n\n`);
+
+  return res.status(200);
+}
+\end{lstlisting}
+
+\textbf{Limitation:} SSE connections will timeout after Vercel's execution limit.
+
+\subsection{Change 2: Created \texttt{vercel.json} Configuration}
+
+Created configuration file at repository root:
+
+\begin{lstlisting}
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*\\.(html|css|js|png|jpg|jpeg|gif|svg|ico))",
+      "dest": "/multi-sensor-network-main/data/$1"
+    },
+    {
+      "src": "/",
+      "dest": "/multi-sensor-network-main/data/index.html"
+    }
+  ]
+}
+\end{lstlisting}
+
+\textbf{Purpose:}
+\begin{itemize}
+    \item Defines serverless function builds
+    \item Routes API requests to \texttt{/api/} functions
+    \item Routes static file requests to appropriate directories
+    \item Sets root route to serve dashboard
+\end{itemize}
+
+\subsection{Change 3: Fixed Root Folder Structure}
+
+\subsubsection{Problem Identified}
+
+The \texttt{vercel.json} and \texttt{api/} directory were initially nested incorrectly:
+
+\begin{lstlisting}[language=bash, basicstyle=\ttfamily\footnotesize]
+multi-sensor-network-main/          # Git root
+  └── multi-sensor-network-main/    # Nested subdirectory
+      ├── vercel.json               # ❌ Wrong location
+      ├── api/                      # ❌ Wrong location
+      └── data/
+\end{lstlisting}
+
+Vercel expects configuration at the git repository root, not in subdirectories.
+
+\subsubsection{Solution}
+
+Moved files to correct locations:
+
+\begin{lstlisting}[language=bash, basicstyle=\ttfamily\footnotesize]
+multi-sensor-network-main/          # Git root
+  ├── vercel.json                   # ✅ Correct location
+  ├── api/                          # ✅ Correct location
+  │   ├── ingest.js
+  │   ├── status.js
+  │   └── events.js
+  └── multi-sensor-network-main/    # Project files
+      └── data/
+\end{lstlisting}
+
+\subsection{Change 4: Consolidated Website Files into \texttt{gateway-server}}
+
+\subsubsection{Motivation}
+
+User requested all website files to be in \texttt{gateway-server} directory for easier management and deployment.
+
+\subsubsection{File Movement}
+
+\begin{itemize}
+    \item \texttt{data/index.html} $\rightarrow$ \texttt{gateway-server/index.html}
+    \item \texttt{data/script.js} $\rightarrow$ \texttt{gateway-server/script.js}
+    \item \texttt{data/style.css} $\rightarrow$ \texttt{gateway-server/style.css}
+\end{itemize}
+
+\subsubsection{Updated Server Code}
+
+Changed \texttt{gateway-server/index.js}:
+
+\textbf{Before:}
+\begin{lstlisting}
+// Serve static files from the data directory
+app.use(express.static(path.join(__dirname, "..", "data")));
+
+// Root route
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "..", "data", "index.html"));
+});
+\end{lstlisting}
+
+\textbf{After:}
+\begin{lstlisting}
+// Serve static files from the gateway-server directory
+app.use(express.static(__dirname));
+
+// Root route
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+\end{lstlisting}
+
+\subsection{Change 5: Fixed \texttt{.gitignore}}
+
+\subsubsection{Problem}
+
+The \texttt{.gitignore} file contained:
+\begin{lstlisting}[language=bash]
+.md
+\end{lstlisting}
+
+This pattern ignored \textbf{all} markdown files, preventing documentation from being committed.
+
+\subsubsection{Solution}
+
+Replaced with proper patterns:
+\begin{lstlisting}[language=bash]
+.pio
+.vscode/.browse.c_cpp.db*
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch
+node_modules/
+*.log
+.env
+.env.local
+\end{lstlisting}
+
+\subsection{Change 6: Repository Migration}
+
+Changed git remote from:
+\begin{itemize}
+    \item \textbf{Old:} \texttt{https://github.com/IsaakBtue/multi-sensor-network.git}
+    \item \textbf{New:} \texttt{https://github.com/IsaakBtue/Multi-sensor-website.git}
+\end{itemize}
+
+All code pushed to the new repository.
+
+\section{Current Situation}
+
+\subsection{Project Structure (After Changes)}
+
+\begin{lstlisting}[language=bash, basicstyle=\ttfamily\footnotesize]
+multi-sensor-network-main/              # Git repository root
+├── vercel.json                         # Vercel configuration
+├── api/                                # Serverless functions
+│   ├── ingest.js
+│   ├── status.js
+│   └── events.js
+└── multi-sensor-network-main/          # Project directory
+    ├── gateway-server/                 # Complete server package
+    │   ├── index.js                    # Express server (for local)
+    │   ├── index.html                  # Website
+    │   ├── script.js                   # Website JavaScript
+    │   ├── style.css                   # Website styles
+    │   ├── package.json
+    │   └── node_modules/
+    ├── data/                           # (Original location, kept for reference)
+    ├── src/                            # ESP32 source code
+    ├── include/                         # Header files
+    └── platformio.ini
+\end{lstlisting}
+
+\subsection{Dual Deployment Support}
+
+The project now supports two deployment methods:
+
+\subsubsection{1. Local Development (Express Server)}
+
+\begin{lstlisting}[language=bash]
+cd gateway-server
+npm start
+# Server runs on http://localhost:3000
+\end{lstlisting}
+
+\textbf{Features:}
+\begin{itemize}
+    \item Full Express.js server with persistent connections
+    \item Server-Sent Events (SSE) work correctly
+    \item In-memory state management
+    \item Real-time updates
+    \item All features functional
+\end{itemize}
+
+\subsubsection{2. Vercel Deployment (Serverless)}
+
+\begin{lstlisting}[language=bash]
+# Automatic deployment via GitHub integration
+# Functions available at:
+# - https://your-project.vercel.app/
+# - https://your-project.vercel.app/api/ingest
+# - https://your-project.vercel.app/api/status
+\end{lstlisting}
+
+\textbf{Features:}
+\begin{itemize}
+    \item Serverless functions for API endpoints
+    \item Static file serving
+    \item Automatic scaling
+    \item Free tier available
+    \item \textbf{Limitation:} SSE connections timeout (10-60s limit)
+\end{itemize}
+
+\section{Technical Concepts Explained}
+
+\subsection{Serverless Architecture}
+
+\subsubsection{Traditional Server Model}
+
+\begin{equation}
+\text{Server} = \text{Process starts} \rightarrow \text{Runs continuously} \rightarrow \text{Handles all requests}
+\end{equation}
+
+\begin{itemize}
+    \item Single process handles all requests
+    \item State persists in memory
+    \item Connections can be maintained indefinitely
+    \item Resource usage: Constant (even when idle)
+\end{itemize}
+
+\subsubsection{Serverless Function Model}
+
+\begin{equation}
+\text{Request} \rightarrow \text{Function starts} \rightarrow \text{Executes} \rightarrow \text{Returns response} \rightarrow \text{Function terminates}
+\end{equation}
+
+\begin{itemize}
+    \item Each request triggers a new function instance
+    \item No shared state between invocations
+    \item Execution time limits enforced
+    \item Resource usage: Pay-per-execution
+\end{itemize}
+
+\subsection{State Management Comparison}
+
+\subsubsection{Express Server (Local)}
+
+\begin{lstlisting}
+const clients = new Set();  // Shared across all requests
+
+app.get("/events", (req, res) => {
+  clients.add(res);  // State persists
+  // Connection maintained
+});
+\end{lstlisting}
+
+\textbf{Advantages:}
+\begin{itemize}
+    \item State shared across requests
+    \item Real-time updates possible
+    \item Connection pooling
+\end{itemize}
+
+\subsubsection{Serverless Functions (Vercel)}
+
+\begin{lstlisting}
+// Each function invocation is isolated
+export default async function handler(req, res) {
+  // No shared state available
+  // Each request is independent
+  // State must be stored externally (database, Redis)
+}
+\end{lstlisting}
+
+\textbf{Constraints:}
+\begin{itemize}
+    \item No in-memory state between requests
+    \item Must use external storage for persistence
+    \item Each function is stateless
+\end{itemize}
+
+\subsection{Connection Types}
+
+\subsubsection{Server-Sent Events (SSE)}
+
+\textbf{How it works:}
+\begin{enumerate}
+    \item Client opens HTTP connection
+    \item Server keeps connection open
+    \item Server sends data as events
+    \item Connection remains open indefinitely
+\end{enumerate}
+
+\textbf{Express Server:} ✅ Works perfectly
+\begin{itemize}
+    \item Connection can be maintained
+    \item No execution time limits
+    \item Real-time updates possible
+\end{itemize}
+
+\textbf{Vercel Serverless:} ❌ Limited support
+\begin{itemize}
+    \item Execution time limit: 10-60 seconds
+    \item Connection terminates after timeout
+    \item Not suitable for long-lived connections
+\end{itemize}
+
+\subsubsection{Alternative: Polling}
+
+For Vercel deployment, polling is recommended:
+
+\begin{lstlisting}
+// Client-side polling
+setInterval(async () => {
+  const response = await fetch('/api/status');
+  const data = await response.json();
+  updateDashboard(data);
+}, 5000);  // Poll every 5 seconds
+\end{lstlisting}
+
+\section{Limitations and Trade-offs}
+
+\subsection{Vercel Deployment Limitations}
+
+\begin{enumerate}
+    \item \textbf{Execution Time Limits}
+    \begin{itemize}
+        \item Hobby plan: 10 seconds maximum
+        \item Pro plan: 60 seconds maximum
+        \item Long-running operations will timeout
+    \end{itemize}
+    
+    \item \textbf{No Persistent Connections}
+    \begin{itemize}
+        \item Server-Sent Events timeout
+        \item WebSockets not supported natively
+        \item Real-time updates require polling or external services
+    \end{itemize}
+    
+    \item \textbf{Stateless Functions}
+    \begin{itemize}
+        \item No in-memory state between requests
+        \item Must use external storage (database, Redis)
+        \item Each function invocation is isolated
+    \end{itemize}
+    
+    \item \textbf{Cold Starts}
+    \begin{itemize}
+        \item First request after inactivity may be slower
+        \item Function needs to initialize
+        \item Subsequent requests are faster
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Recommendations}
+
+\subsubsection{For Full Functionality}
+
+Use \textbf{local deployment} or platforms that support persistent servers:
+\begin{itemize}
+    \item Railway
+    \item Render
+    \item DigitalOcean App Platform
+    \item Heroku
+\end{itemize}
+
+\subsubsection{For Vercel Deployment}
+
+If using Vercel, consider:
+\begin{itemize}
+    \item Implement polling instead of SSE
+    \item Use external WebSocket service (Pusher, Ably) for real-time
+    \item Store state in database instead of memory
+    \item Accept limitations of serverless architecture
+\end{itemize}
+
+\section{Summary of Changes}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Change} & \textbf{Before} & \textbf{After} \\
+\hline
+Server Architecture & Express persistent server & Serverless functions \\
+\hline
+File Location & \texttt{data/} directory & \texttt{gateway-server/} directory \\
+\hline
+Configuration & None & \texttt{vercel.json} at root \\
+\hline
+API Endpoints & Express routes & \texttt{/api/} serverless functions \\
+\hline
+State Management & In-memory Set & Stateless (external storage needed) \\
+\hline
+SSE Support & Full support & Limited (timeout after 10-60s) \\
+\hline
+Repository & \texttt{multi-sensor-network} & \texttt{Multi-sensor-website} \\
+\hline
+\end{tabular}
+\caption{Summary of Changes}
+\end{table}
+
+\section{Conclusion}
+
+The project has been successfully restructured to support both local Express.js deployment and Vercel serverless deployment. While Vercel deployment has limitations (particularly for real-time features), the codebase now provides:
+
+\begin{itemize}
+    \item ✅ Proper Vercel configuration
+    \item ✅ Serverless function structure
+    \item ✅ Consolidated website files
+    \item ✅ Dual deployment support
+    \item ✅ Comprehensive documentation
+\end{itemize}
+
+The local Express server remains fully functional with all features, while Vercel deployment provides a cloud-hosted option with serverless architecture benefits (automatic scaling, pay-per-use, etc.) at the cost of some real-time functionality.
+
+\end{document}
+
