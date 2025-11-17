@@ -1,0 +1,209 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    color: #333;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0;
+    padding: 20px;
+}
+
+h1 {
+    color: #005A8D;
+}
+
+/* NEW: Style for the room controls */
+.room-controls {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    margin-bottom: 20px;
+    background-color: #fff;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.room-controls label {
+    font-weight: bold;
+    color: #005A8D;
+}
+
+.room-controls select,
+.room-controls button {
+    padding: 10px 15px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    font-size: 1em;
+    cursor: pointer;
+}
+
+.room-controls button {
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    transition: background-color 0.3s;
+}
+
+.room-controls button:hover {
+    background-color: #0056b3;
+}
+/* END NEW */
+
+.dashboard-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 20px;
+}
+
+.sensor-card {
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    width: 200px;
+    text-align: center;
+}
+
+.sensor-card h2 {
+    margin-top: 0;
+    color: #007BFF;
+}
+
+.sensor-card p {
+    font-size: 2em;
+    font-weight: bold;
+    margin: 10px 0 0;
+}
+
+/* New CSS rule for the CO2 alert state */
+.sensor-card.alert {
+    background-color: #ffcccc; /* Light red background */
+    color: #a00; /* Darker red text */
+    border-color: #ff0000;
+}
+
+/* Styling for the chart containers */
+.chart-container {
+    width: 80%; /* Adjust the width of your chart */
+    max-width: 800px;
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    margin-top: 20px; /* Add some space above the chart */
+    text-align: center;
+}
+
+/* Styling for the low battery alert box */
+.alert-box {
+    background-color: #ffeb3b; /* A yellow background for a warning */
+    border: 1px solid #ffc107;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+    width: 80%;
+    max-width: 800px;
+    text-align: center;
+    color: #333;
+}
+
+.alert-box.hidden {
+    display: none; /* Hide the alert by default */
+}
+
+/* Styling for the "Call" button */
+.call-button {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 10px 20px;
+    background-color: #28a745; /* Green color for action */
+    color: white;
+    text-decoration: none; /* Remove underline */
+    border-radius: 5px;
+    font-weight: bold;
+}
+
+/* NEW: Modal Styles */
+.modal {
+    /* Full screen overlay */
+    position: fixed;
+    z-index: 1; /* Sit on top */
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-content {
+    background-color: #fefefe;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    width: 90%;
+    max-width: 400px;
+    text-align: center;
+}
+
+.modal-content h2 {
+    color: #007BFF;
+}
+
+.modal-content input[type="text"] {
+    width: 100%;
+    padding: 12px 20px;
+    margin: 8px 0;
+    display: inline-block;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.modal-content button {
+    background-color: #28a745; /* Green button */
+    color: white;
+    padding: 14px 20px;
+    margin: 10px 0;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    width: 100%;
+    font-size: 1.1em;
+}
+
+.modal-content button:hover {
+    background-color: #1e7e34;
+}
+
+.close-button {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.close-button:hover,
+.close-button:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* Style for the message inside the modal */
+#modal-message {
+    margin-top: 15px;
+    font-weight: bold;
+    color: #28a745; /* Success color */
+}
+/* END NEW */

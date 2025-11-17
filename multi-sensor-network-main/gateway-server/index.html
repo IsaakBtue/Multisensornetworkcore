@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Sensor Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <h1>Building Environmental Monitoring</h1>
+    <div id="low-battery-alert" class="alert-box hidden">
+        <p>⚠️ **Low battery warning!** Device battery is running low.</p>
+        <a href="tel:0123456789" class="call-button">Call for a replacement</a>
+    </div>
+
+    <div class="room-controls">
+        <label for="room-select">Select Room:</label>
+        <select id="room-select">
+            <option value="roomA">Room A (Current)</option>
+            <option value="roomB">Room B</option>
+            <option value="roomC">Room C</option>
+        </select>
+        <button id="add-device-btn">Add New Device</button>
+    </div>
+    <div class="dashboard-container">
+        <div class="sensor-card">
+            <h2>Temperature</h2>
+            <p id="temperature-value">Waiting for data...</p>
+        </div>
+        <div class="sensor-card">
+            <h2>CO₂ Level</h2>
+            <p id="co2-value">Waiting for data...</p>
+        </div>
+        <div class="sensor-card">
+            <h2>Solar Radiation</h2>
+            <p id="solar-radiation-value">Waiting for data...</p>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <h2>Temperature Trend</h2>
+        <canvas id="temperature-chart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h2>CO₂ Level Trend</h2>
+        <canvas id="co2-chart"></canvas>
+    </div>
+
+    <div id="add-device-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h2>Enter New Device Code</h2>
+            <p>Please enter the device code found on your new sensor.</p>
+            <input type="text" id="device-code-input" placeholder="e.g., 1A2B3C4D">
+            <input type="text" id="room-name-input" placeholder="e.g., Server Room">
+            <button id="save-device-btn">Save Device</button>
+            <p id="modal-message" class="hidden"></p>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

@@ -6,8 +6,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from the data directory
-app.use(express.static(path.join(__dirname, "..", "data")));
+// Serve static files from the gateway-server directory
+app.use(express.static(__dirname));
 
 const clients = new Set();
 
@@ -36,7 +36,7 @@ app.get("/events", (req, res) => {
 
 // Root route - serve the dashboard
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "..", "data", "index.html"));
+  res.sendFile(path.join(__dirname, "index.html"));
 });
 
 // API status endpoint
