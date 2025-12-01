@@ -79,6 +79,19 @@ Station* findStation(const uint8_t* mac) {
   return NULL;
 }
 
+// Debug function to print all registered stations
+void printRegisteredStations() {
+  Serial.printf("Registered stations: %d / %d\n", stationCount, NUM_STATIONS);
+  for (int i = 0; i < stationCount; ++i) {
+    Serial.printf("  Station %d: ", i);
+    for (int j = 0; j < 6; ++j) {
+      Serial.printf("%02X", stations[i]->mac[j]);
+      if (j < 5) Serial.print(":");
+    }
+    Serial.printf(" (RSSI: %d)\n", stations[i]->rssi);
+  }
+}
+
 // Create or get the existing Station
 Station* getOrCreateStation(const uint8_t* mac) {
   Station* existing = findStation(mac);
