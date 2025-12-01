@@ -27,7 +27,7 @@ const int STATE_CALI_ROUTINE = 3;
 // what you wrote with what you assign it - it will replace LED_PIN with GPIO_Num_2 each time you run the code.
 #define uS_TO_S_FACTOR 1000000ULL  // Conversion factor for micro seconds to sec
 #define LED_PIN GPIO_NUM_2             // GPIO pin for the LED
-#define MEASUREMENT_DURATION 5  // Time needed for sensor measurement (seconds)
+#define MEASUREMENT_DURATION 10  // Time needed for sensor measurement (seconds) - matches SHORT_SLEEP
 
 
 
