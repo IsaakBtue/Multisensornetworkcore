@@ -24,22 +24,19 @@ void connectToWiFi() {
         Serial.print("WiFi connected, IP: ");
         Serial.println(WiFi.localIP());
         
-        // Print DNS information
+        // Always use Google DNS for reliable DNS resolution
+        // Router DNS (192.168.1.1) may not resolve external domains properly
+        Serial.println("Setting Google DNS (8.8.8.8, 8.8.4.4) for reliable DNS resolution...");
+        WiFi.config(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), IPAddress(8, 8, 8, 8), IPAddress(8, 8, 4, 4));
+        delay(2000); // Wait for DNS config to apply
+        
+        // Verify DNS configuration
         IPAddress dns1 = WiFi.dnsIP(0);
         IPAddress dns2 = WiFi.dnsIP(1);
         Serial.print("DNS Server 1: ");
         Serial.println(dns1);
-        if (dns2[0] != 0 || dns2[1] != 0 || dns2[2] != 0 || dns2[3] != 0) {
-            Serial.print("DNS Server 2: ");
-            Serial.println(dns2);
-        }
-        
-        // Set DNS servers explicitly if not set (use Google DNS as fallback)
-        if (dns1[0] == 0 && dns1[1] == 0 && dns1[2] == 0 && dns1[3] == 0) {
-            Serial.println("No DNS server received, setting Google DNS (8.8.8.8)...");
-            WiFi.config(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), IPAddress(8, 8, 8, 8), IPAddress(8, 8, 4, 4));
-            delay(1000); // Wait for DNS config to apply
-        }
+        Serial.print("DNS Server 2: ");
+        Serial.println(dns2);
         
         Serial.print("Gateway will forward data to: ");
         Serial.println(WEB_SERVER_URL);

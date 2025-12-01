@@ -159,17 +159,28 @@ void sendToServer(const Station* st) {
       Serial.print(host);
       Serial.print("... ");
       
-      // Try DNS resolution with timeout
+      // Try DNS resolution with longer timeout (10 seconds)
+      // Set DNS timeout explicitly
+      WiFi.setHostname("esp32-gateway");
+      
+      Serial.print("Attempting DNS resolution (timeout: 10s)... ");
       int dnsResult = WiFi.hostByName(host.c_str(), serverIP);
+      
       if (dnsResult == 1) {
         Serial.print("SUCCESS! IP: ");
         Serial.println(serverIP);
         // Convert IP address to String and use it directly instead of hostname
         String ipString = serverIP.toString();
+        Serial.printf("Connecting to IP: %s:443%s\n", ipString.c_str(), path.c_str());
         connectionSuccess = http.begin(client, ipString, 443, path, true);
       } else {
-        Serial.println("FAILED - will try with hostname anyway");
-        // Fallback: try with hostname (might work if DNS is cached)
+        Serial.println("FAILED");
+        Serial.println("DNS resolution failed. Possible causes:");
+        Serial.println("  - Router DNS not working properly");
+        Serial.println("  - Network connectivity issues");
+        Serial.println("  - Domain name incorrect");
+        Serial.println("Attempting connection with hostname anyway (may fail)...");
+        // Fallback: try with hostname (will likely fail if DNS doesn't work)
         connectionSuccess = http.begin(client, host, 443, path, true);
       }
     }
