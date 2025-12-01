@@ -35,14 +35,23 @@ void setup() {
     Serial.begin(115200);
     delay(500);
 
-    Serial.println("=== Gateway Starting ===");
-    Serial.println("Initializing connection to web server...");
+    Serial.println("\n========================================");
+    Serial.println("=== ESP32 Gateway Starting ===");
+    Serial.println("========================================\n");
     
+    Serial.println("Step 1: Connecting to WiFi...");
     connectToWiFi();
+    
+    Serial.println("\nStep 2: Initializing ESP-NOW...");
     ESPNOWSetup(); 
     
-    Serial.println("Gateway ready: listening for ESP-NOW packets and forwarding to web server.");
-    Serial.println("Waiting for sensor data from ESP-NOW stations...");
+    Serial.println("\n========================================");
+    Serial.println("=== Gateway Ready ===");
+    Serial.println("========================================");
+    Serial.println("Status: Listening for ESP-NOW packets");
+    Serial.println("Action: Received data will be forwarded to web server");
+    Serial.printf("Web Server: %s\n", WEB_SERVER_URL);
+    Serial.println("Waiting for sensor stations to send data...\n");
 }
 
 void loop() {

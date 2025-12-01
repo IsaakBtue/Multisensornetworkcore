@@ -213,14 +213,29 @@ void sendToServer(const Station* st) {
 // Note: Older ESP32 framework versions use (mac_addr, data, len) signature
 // Newer versions use (recvInfo, data, len) signature
 void OnDataRecv(const uint8_t* mac_addr, const uint8_t* data, int len) {
+  Serial.printf("\n=== ESP-NOW Packet Received ===\n");
+  Serial.printf("From MAC: ");
+  for (int i = 0; i < 6; ++i) {
+    Serial.printf("%02X", mac_addr[i]);
+    if (i < 5) Serial.print(":");
+  }
+  Serial.printf("\nData length: %d bytes (expected: %d bytes)\n", len, sizeof(sensor_msg));
+  
   Station* st = getOrCreateStation(mac_addr);
   if (st && len == sizeof(sensor_msg)) {
+    Serial.println("Valid sensor message - processing...");
     st->handleMessage(data, len);
 #ifdef ROLE_GATEWAY
+    Serial.println("Forwarding to web server...");
     sendToServer(st);
 #endif
+    Serial.println("=== Packet Processing Complete ===\n");
   } else {
-    Serial.println("Received invalid data or too many stations");
+    if (!st) {
+      Serial.printf("ERROR: Cannot create station (max stations: %d, current: %d)\n", NUM_STATIONS, stationCount);
+    } else {
+      Serial.printf("ERROR: Invalid message length (got %d, expected %d)\n", len, sizeof(sensor_msg));
+    }
   }
 }
 
@@ -235,21 +250,38 @@ void addBroadcastPeer() {
 }
 
 void ESPNOWSetup(){
-#ifndef ROLE_GATEWAY
+#ifdef ROLE_GATEWAY
+    // For gateway: WiFi is already connected in STA mode for web server access
+    // ESP-NOW works alongside WiFi STA mode
+    Serial.println("ESP-NOW: Gateway mode - WiFi STA already active");
+#else
     // For stations, we only use Wi-Fi as a transport for ESP-NOW
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
+    Serial.println("ESP-NOW: Station mode - WiFi STA for ESP-NOW transport only");
 #endif
+    
     // Init ESP-NOW
+    Serial.println("Initializing ESP-NOW...");
     if (esp_now_init() != ESP_OK) {
-        Serial.println("ESP-NOW Init Failed. Rebooting...");
+        Serial.println("ERROR: ESP-NOW Init Failed. Rebooting...");
         delay(2000);
         ESP.restart();
     }
+    Serial.println("ESP-NOW initialized successfully");
 
-    // Register callbacks but
+    // Register callbacks
     esp_now_register_send_cb(OnDataSent);
     esp_now_register_recv_cb(OnDataRecv);
+    Serial.println("ESP-NOW callbacks registered");
+    
+    // Enable promiscuous mode for RSSI tracking
     esp_wifi_set_promiscuous(true);
     esp_wifi_set_promiscuous_rx_cb(&promiscuous_rx_cb);
+    Serial.println("Promiscuous mode enabled for RSSI tracking");
+    
+#ifdef ROLE_GATEWAY
+    Serial.println("Gateway ready to receive ESP-NOW packets from stations");
+    Serial.println("Received data will be automatically forwarded to web server");
+#endif
 }
