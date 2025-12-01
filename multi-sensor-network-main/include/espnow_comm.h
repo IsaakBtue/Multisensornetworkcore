@@ -2,9 +2,24 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include "esp_wifi.h"
+#include <HTTPClient.h>
+#include <WiFiClient.h>
 
 #include "typedef.h"
 #include "config.h"
+
+// For HTTPS support on ESP32 - try to include WiFiClientSecure
+#ifdef ROLE_GATEWAY
+  #ifdef ESP32
+    // Try including WiFiClientSecure - it should be available in ESP32 framework
+    #include <WiFiClientSecure.h>
+    #define HAS_WIFI_CLIENT_SECURE 1
+  #else
+    #define HAS_WIFI_CLIENT_SECURE 0
+  #endif
+#else
+  #define HAS_WIFI_CLIENT_SECURE 0
+#endif
 
 bool send_done = false;
 // FF:FF:FF:FF:FF:FF is broadcast MAC
@@ -43,7 +58,7 @@ public:
         Serial.printf("%02X", mac[i]);
         if (i < 5) Serial.print(":");
       }
-      Serial.printf(" | Temp: %.2f, CO2: %.2f, Humidity: %.2f | RSSI: %d\n", readings.temperature, readings.co2, readings.humidity, rssi);
+      Serial.printf(" | Temp: %.2f, CO2: %d, Humidity: %.2f | RSSI: %d\n", readings.temperature, readings.co2, readings.humidity, rssi);
     } else {
       Serial.println("Invalid sensor_msg length");
     }
@@ -97,13 +112,113 @@ void OnDataSent(const uint8_t* mac, esp_now_send_status_t status) {
   send_done = true;
 }
 
-// Callback when data is received
-void OnDataRecv(const esp_now_recv_info_t* recvInfo, const uint8_t* data, int len) {
-  const uint8_t* mac = recvInfo->src_addr;  // Extract MAC address from recvInfo
+// Forward received data to web server (only compiled for gateway)
+#ifdef ROLE_GATEWAY
+void sendToServer(const Station* st) {
+  if (!st) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected, skipping HTTP send");
+    return;
+  }
 
-  Station* st = getOrCreateStation(mac);
+  HTTPClient http;
+  bool connectionSuccess = false;
+  
+  // Use WiFiClientSecure for HTTPS connection
+  #if HAS_WIFI_CLIENT_SECURE
+    WiFiClientSecure client;
+    client.setInsecure(); // Skip certificate validation for testing
+    client.setTimeout(20000);
+    
+    // Parse HTTPS URL
+    String url = String(WEB_SERVER_URL);
+    if (url.startsWith("https://")) {
+      url = url.substring(8); // Remove "https://"
+      int pathIndex = url.indexOf('/');
+      String host = (pathIndex > 0) ? url.substring(0, pathIndex) : url;
+      String path = (pathIndex > 0) ? url.substring(pathIndex) : "/";
+      
+      Serial.printf("Using WiFiClientSecure: %s:443%s\n", host.c_str(), path.c_str());
+      // Use NetworkClient version: begin(NetworkClient &client, String host, uint16_t port, String uri, bool https)
+      connectionSuccess = http.begin(client, host, 443, path, true);
+    }
+  #else
+    Serial.println("ERROR: WiFiClientSecure not available");
+    Serial.println("HTTPS requires WiFiClientSecure which is not in this framework version");
+    return;
+  #endif
+  
+  if (!connectionSuccess) {
+    Serial.println("ERROR: Failed to establish HTTPS connection");
+    return;
+  }
+  
+  Serial.println("HTTPS connection established successfully");
+  
+  // Configure HTTP client
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(20000); // 20 second timeout for HTTPS
+  http.setReuse(false); // Don't reuse for HTTPS
+  
+  // Build MAC string
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           st->mac[0], st->mac[1], st->mac[2],
+           st->mac[3], st->mac[4], st->mac[5]);
+
+  // Build JSON payload matching the API endpoint format
+  String payload = "{";
+  payload += "\"mac\":\""; payload += macStr; payload += "\",";
+  payload += "\"temperature\":"; payload += String(st->readings.temperature, 2); payload += ",";
+  payload += "\"co2\":"; payload += String(st->readings.co2); payload += ",";
+  payload += "\"humidity\":"; payload += String(st->readings.humidity, 2);
+  payload += "}";
+
+  Serial.print("Sending data to server: ");
+  Serial.println(payload);
+  
+  int httpCode = http.POST(payload);
+  
+  if (httpCode > 0) {
+    Serial.printf("Server response code: %d\n", httpCode);
+    
+    if (httpCode >= 200 && httpCode < 300) {
+      Serial.println("SUCCESS: Data sent successfully!");
+      String response = http.getString();
+      if (response.length() > 0) {
+        Serial.print("Server response: ");
+        Serial.println(response);
+      }
+    } else if (httpCode == 308) {
+      Serial.println("WARNING: 308 redirect received - POST data may be lost");
+      Serial.println("This usually means the server redirected HTTP to HTTPS");
+    } else {
+      Serial.printf("Unexpected response code: %d\n", httpCode);
+      String response = http.getString();
+      if (response.length() > 0) {
+        Serial.print("Server response: ");
+        Serial.println(response);
+      }
+    }
+  } else {
+    Serial.printf("Connection failed, error: %s (code: %d)\n", http.errorToString(httpCode).c_str(), httpCode);
+    Serial.println("This may indicate HTTPS/TLS issues");
+  }
+  
+  http.end();
+}
+#endif
+
+// Callback when data is received
+// Note: Older ESP32 framework versions use (mac_addr, data, len) signature
+// Newer versions use (recvInfo, data, len) signature
+void OnDataRecv(const uint8_t* mac_addr, const uint8_t* data, int len) {
+  Station* st = getOrCreateStation(mac_addr);
   if (st && len == sizeof(sensor_msg)) {
     st->handleMessage(data, len);
+#ifdef ROLE_GATEWAY
+    sendToServer(st);
+#endif
   } else {
     Serial.println("Received invalid data or too many stations");
   }
@@ -120,8 +235,11 @@ void addBroadcastPeer() {
 }
 
 void ESPNOWSetup(){
+#ifndef ROLE_GATEWAY
+    // For stations, we only use Wi-Fi as a transport for ESP-NOW
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
+#endif
     // Init ESP-NOW
     if (esp_now_init() != ESP_OK) {
         Serial.println("ESP-NOW Init Failed. Rebooting...");
