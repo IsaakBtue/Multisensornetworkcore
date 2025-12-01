@@ -10,14 +10,6 @@
     {
       "src": "/api/(.*)",
       "dest": "/api/$1"
-    },
-    {
-      "src": "/(.*\\.(html|css|js|png|jpg|jpeg|gif|svg|ico))",
-      "dest": "/data/$1"
-    },
-    {
-      "src": "/",
-      "dest": "/data/index.html"
     }
   ]
 }
