@@ -32,7 +32,7 @@ const int STATE_CALI_ROUTINE = 3;
 
 
 uint16_t LONG_SLEEP;      
-uint8_t SHORT_SLEEP = 5; // seconds to wait until measurement is back
+uint8_t SHORT_SLEEP = 10; // seconds to wait for sensor measurement (sensor needs 10 seconds)
 uint8_t cur_time = 0;     // shorter length to save memory
 uint16_t AWAKE_TIME = 0;
 
@@ -76,10 +76,18 @@ void setup() {
   Serial.println("\n========================================");
   Serial.println("=== ESP32 Station Starting ===");
   Serial.println("========================================\n");
-  Serial.printf("Measurement interval: %d seconds\n", MEASUREMENT_INTERVAL);
-  Serial.printf("Short sleep (measurement wait): %d seconds\n", SHORT_SLEEP);
-  Serial.printf("Long sleep (between measurements): %d seconds\n", LONG_SLEEP);
+  
+  Serial.println("--- Configuration ---");
+  Serial.printf("  Measurement interval: %d seconds\n", MEASUREMENT_INTERVAL);
+  Serial.printf("  Short sleep (measurement wait): %d seconds\n", SHORT_SLEEP);
+  Serial.printf("  Long sleep (between cycles): %d seconds\n", LONG_SLEEP);
+  Serial.printf("  Fan enabled: %s\n", useFan ? "YES" : "NO");
+  Serial.printf("  Fan duration: %d seconds\n", FAN_DURATION);
+  Serial.printf("  Max stations: %d\n", NUM_STATIONS);
+  Serial.printf("  Calibration period: %d cycles (%d hours)\n", CALI_PERIOD, CALI_DURATION);
   Serial.println();
+  
+  Serial.println("--- Initialization ---");
 
   esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
     
@@ -93,10 +101,27 @@ void setup() {
     }
 
   // Initialize stuff
+  Serial.println("  Initializing ESP-NOW...");
   ESPNOWSetup();
+  Serial.println("  ✓ ESP-NOW initialized");
+  
+  Serial.println("  Initializing SCD41 sensor...");
   initSensor();
+  Serial.println("  ✓ Sensor initialized");
+  
+  Serial.println("  Adding broadcast peer...");
   addBroadcastPeer();
+  Serial.println("  ✓ Broadcast peer added");
+  
+  Serial.println("  Checking calibration status...");
   checkCalibration();   // check current iteration if we need to do calibration
+  Serial.printf("  Calibration needed: %s\n", needCalibration ? "YES" : "NO");
+  Serial.printf("  Current calibration counter: %d\n", cali_counter);
+  Serial.println();
+  
+  Serial.println("--- Entering Main Loop ---");
+  Serial.printf("Current system state: %d\n", system_state);
+  Serial.println("  (0=Initial, 1=Start Measure, 2=Read Value, 3=Calibration)\n");
 
   switch (system_state) {  // switch case sytax note; you check the () variable against if it equals what is after case _____;
         case STATE_START_MEASURE:
@@ -126,14 +151,16 @@ void setup() {
           // }
 
             // Start periodic measurement
-            Serial.println("Starting sensor measurement...");
+            Serial.println("\n--- Starting Measurement Cycle ---");
+            Serial.println("Step 1: Starting sensor measurement...");
             error = sensor.startPeriodicMeasurement(); // Start the measurement process (non blocking)
             if (error != NO_ERROR) {
-              Serial.print("Error trying to execute startPeriodicMeasurement(): ");
+              Serial.print("ERROR: Failed to start measurement - ");
               errorToString(error, errorMessage, sizeof errorMessage);
               Serial.println(errorMessage);
             } else {
-              Serial.println("Sensor measurement started successfully");
+              Serial.println("✓ Sensor measurement started successfully");
+              Serial.printf("  Waiting %d seconds for measurement to complete...\n", SHORT_SLEEP);
             }
 
             // Save state in RTC memory
@@ -144,45 +171,59 @@ void setup() {
             
             // Note down the time
             cur_time = millis();
-            Serial.printf("Awake for %d milliseconds\n", (cur_time - start_time));
+            Serial.printf("Awake time so far: %d milliseconds\n", (cur_time - start_time));
+            Serial.printf("Entering deep sleep for %d seconds (measurement in progress)...\n", SHORT_SLEEP);
+            Serial.println("--- Sleeping ---\n");
 
-            // Go to sleep (the short sleep)
+            // Go to sleep (the short sleep - wait for measurement)
             esp_sleep_enable_timer_wakeup(SHORT_SLEEP * uS_TO_S_FACTOR);
-            Serial.printf("timer set going to bed(short)"); 
             esp_deep_sleep_start();
             break;
 
         case STATE_READ_VALUE:
             // we woke up from short sleep
             // Time to read the value and send it
-            Serial.println("\n=== Reading sensor data ===");
+            Serial.println("\n=== Woke up from measurement sleep ===");
+            Serial.println("Step 2: Reading sensor data...");
             msg = readSDA41(); // This uses sensor.readMeasurement()
             
-            Serial.printf("Sensor readings - Temp: %.2f°C, CO2: %d ppm, Humidity: %.2f%%\n", 
-                         msg.temperature, msg.co2, msg.humidity);
+            Serial.println("\n--- Sensor Readings ---");
+            Serial.printf("  Temperature: %.2f °C\n", msg.temperature);
+            Serial.printf("  CO2:         %d ppm\n", msg.co2);
+            Serial.printf("  Humidity:    %.2f %%\n", msg.humidity);
+            Serial.println("--- End Readings ---\n");
 
             // Reset send_done flag
             send_done = false;
             
-            Serial.println("Sending data via ESP-NOW...");
+            Serial.println("Step 3: Sending data via ESP-NOW...");
+            Serial.print("  Target: Broadcast (FF:FF:FF:FF:FF:FF)\n");
+            Serial.printf("  Data size: %d bytes\n", sizeof(msg));
+            
             esp_err_t result = esp_now_send(broadcastAddr, (uint8_t *)&msg, sizeof(msg));
             
             if (result == ESP_OK) {
-              Serial.println("ESP-NOW send initiated successfully");
+              Serial.println("  ✓ ESP-NOW send initiated successfully");
             } else {
-              Serial.printf("ESP-NOW send failed with error: %d\n", result);
+              Serial.printf("  ✗ ESP-NOW send failed with error code: %d\n", result);
+              Serial.println("  Error codes: 0=OK, -1=FAIL, -2=NO_MEM, -3=INVALID_ARG");
             }
   
             // Wait for send to complete (with timeout)
+            Serial.println("  Waiting for send confirmation...");
             unsigned long sendTimeout = millis() + 2000; // 2 second timeout
+            unsigned long startWait = millis();
+            
             while (!send_done && millis() < sendTimeout) {
               delay(10);
             }
             
+            unsigned long waitTime = millis() - startWait;
+            
             if (send_done) {
-              Serial.println("ESP-NOW data sent successfully!");
+              Serial.printf("  ✓ ESP-NOW data sent successfully! (waited %lu ms)\n", waitTime);
             } else {
-              Serial.println("WARNING: ESP-NOW send timeout");
+              Serial.printf("  ✗ WARNING: ESP-NOW send timeout after %lu ms\n", waitTime);
             }
             
             // Set the next state to start a new cycle
@@ -191,17 +232,30 @@ void setup() {
             digitalWrite(LED_PIN, LOW);
 
             cur_time = millis();
-            Serial.printf("Total awake time: %d milliseconds\n", (cur_time - start_time));
-            Serial.printf("Sleeping for %d seconds until next measurement...\n", LONG_SLEEP);
+            Serial.println("\n--- Cycle Summary ---");
+            Serial.printf("  Total awake time: %d milliseconds\n", (cur_time - start_time));
+            Serial.printf("  Next sleep duration: %d seconds\n", LONG_SLEEP);
+            Serial.printf("  Calibration counter: %d / %d cycles\n", cali_counter, CALI_PERIOD);
+            
+            if (LONG_SLEEP > 0) {
+              Serial.printf("\nSleeping for %d seconds until next measurement cycle...\n", LONG_SLEEP);
+            } else {
+              Serial.println("\nWARNING: LONG_SLEEP is 0 or negative! Check timing configuration.");
+            }
 
             // Calibration counter tracking
             cali_counter++; // adds one to previous value of counter
-            Serial.printf("Calibration counter: %d / %d\n", cali_counter, CALI_PERIOD);
 
-            // enable sleep for the remaining time to complete 10 second interval
-            esp_sleep_enable_timer_wakeup(LONG_SLEEP * uS_TO_S_FACTOR); 
-            Serial.println("Entering deep sleep...\n"); 
-            esp_deep_sleep_start();
+            // enable sleep for the remaining time to complete measurement interval
+            if (LONG_SLEEP > 0) {
+              esp_sleep_enable_timer_wakeup(LONG_SLEEP * uS_TO_S_FACTOR); 
+              Serial.println("Entering deep sleep...\n"); 
+              esp_deep_sleep_start();
+            } else {
+              Serial.println("ERROR: Cannot sleep with negative/zero duration. Restarting...");
+              delay(1000);
+              esp_restart();
+            }
             break;
 
         case STATE_CALI_ROUTINE:
