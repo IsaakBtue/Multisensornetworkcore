@@ -23,7 +23,6 @@ const deviceCodeInput = document.getElementById('device-code-input');
 const roomNameInput = document.getElementById('room-name-input');
 const modalMessage = document.getElementById('modal-message');
 const buildingGrid = document.getElementById('buildingGrid');
-const levelSwitcher = document.getElementById('levelSwitcher');
 const statusSummary = document.getElementById('statusSummary');
 const relativeDistances = document.getElementById('relativeDistances');
 const humidityValueEl = document.getElementById('humidity-value');
@@ -120,40 +119,47 @@ function isBatteryLow() {
     return Math.random() < 0.1; 
 }
 
-// Function to fetch data from the Open-Meteo API
+// Function to fetch live sensor data from our own backend (ESP32 gateway -> Vercel)
 async function getSensorData() {
-    // In a real application, this API call would use the currently selected device/room ID
-    // For this example, we keep the original fixed call.
-    const apiUrl = 'https://api.open-meteo.com/v1/forecast?latitude=51.4408&longitude=5.4779&current=temperature_2m';
+    const apiUrl = '/api/ingest'; // Same origin as the deployed site
     try {
         const response = await fetch(apiUrl);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
-        const temperature = data.current.temperature_2m.toFixed(1);
-        
-        // This is still a simulated value
-        const co2 = (Math.random() * 800 + 400).toFixed(0); 
-        const humidity = (Math.random() * 20 + 40).toFixed(1);
-        
+
+        if (!data.ok || !data.reading) {
+            // Return zero values when no data is available
+            return {
+                temperature: '0.0 °C',
+                humidity: '0.0 %',
+                co2: '0 ppm',
+                rawTemp: 0,
+                rawCo2: 0,
+                rawHumidity: 0
+            };
+        }
+
+        const { temperature, co2, humidity } = data.reading;
+
         return {
-            temperature: `${temperature} °C`,
-            humidity: `${humidity} %`,
-            co2: `${co2} ppm`,
-            rawTemp: parseFloat(temperature),
-            rawCo2: parseInt(co2),
-            rawHumidity: parseFloat(humidity)
+            temperature: `${temperature.toFixed(1)} °C`,
+            humidity: `${humidity.toFixed(1)} %`,
+            co2: `${co2.toFixed(0)} ppm`,
+            rawTemp: temperature,
+            rawCo2: co2,
+            rawHumidity: humidity
         };
     } catch (error) {
         console.error("Could not fetch data:", error);
         return {
-            temperature: 'N/A',
-            humidity: 'N/A',
-            co2: 'N/A',
-            rawTemp: null,
-            rawCo2: null,
-            rawHumidity: null
+            temperature: '0.0 °C',
+            humidity: '0.0 %',
+            co2: '0 ppm',
+            rawTemp: 0,
+            rawCo2: 0,
+            rawHumidity: 0
         };
     }
 }
@@ -185,26 +191,30 @@ async function updateDashboard() {
     }
 
     // --- Graph Update Logic ---
+    // Only update graphs if we have real data (non-zero values indicate actual readings)
     if (data.rawTemp !== null && data.rawCo2 !== null && data.rawHumidity !== null) {
-        temperatureData.push(data.rawTemp);
-        co2Data.push(data.rawCo2);
-        humidityData.push(data.rawHumidity);
+        // Only add to graph if values are non-zero (real data)
+        if (data.rawTemp !== 0 || data.rawCo2 !== 0 || data.rawHumidity !== 0) {
+            temperatureData.push(data.rawTemp);
+            co2Data.push(data.rawCo2);
+            humidityData.push(data.rawHumidity);
 
-        const now = new Date();
-        labels.push(`${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`);
+            const now = new Date();
+            labels.push(`${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`);
 
-        const maxPoints = 20;
-        if (labels.length > maxPoints) {
-            temperatureData.shift();
-            co2Data.shift();
-            humidityData.shift();
-            labels.shift();
-        }
+            const maxPoints = 20;
+            if (labels.length > maxPoints) {
+                temperatureData.shift();
+                co2Data.shift();
+                humidityData.shift();
+                labels.shift();
+            }
 
-        tempChart.update();
-        co2Chart.update();
-        if (humidityChart) {
-            humidityChart.update();
+            tempChart.update();
+            co2Chart.update();
+            if (humidityChart) {
+                humidityChart.update();
+            }
         }
     }
 }
@@ -253,74 +263,121 @@ window.addEventListener('click', (event) => {
 });
 // END NEW
 
-// Facility map data and interactions
+// Facility map data - Single floor with 50 ESPs in rectangular building layout
+// Generate 50 sensors with distance-based positioning
+const cols = 5;
+const rows = 10;
+const buildingSensors = [];
+
+// First, generate sensors with their distance measurements
+for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+        const sensorNum = row * cols + col + 1;
+        const isActive = Math.random() > 0.25;
+        const distance = (Math.random() * 20 + 5).toFixed(1);
+        
+        buildingSensors.push({
+            name: `ESP-${String(sensorNum).padStart(2, '0')}`,
+            status: isActive ? 'active' : 'inactive',
+            distance: parseFloat(distance), // Store as number for calculations
+            distanceDisplay: `${distance} m`,
+            x: 0, // Will be calculated
+            y: 0, // Will be calculated
+        });
+    }
+}
+
+// Distance-based positioning algorithm
+// Use distance measurements to create a grid with natural spacing
+function calculatePositions() {
+    const margin = 1; // 1% margin for zoomed out effect
+    const availableWidth = 100 - (2 * margin);
+    const availableHeight = 100 - (2 * margin);
+    
+    // Calculate average distance to determine spacing scale
+    const avgDistance = buildingSensors.reduce((sum, s) => sum + s.distance, 0) / buildingSensors.length;
+    const maxDistance = Math.max(...buildingSensors.map(s => s.distance));
+    const minDistance = Math.min(...buildingSensors.map(s => s.distance));
+    
+    // Use distance values to create irregular grid spacing
+    // Map distances to positions: larger distances = more spacing
+    const positions = [];
+    
+    for (let i = 0; i < buildingSensors.length; i++) {
+        const row = Math.floor(i / cols);
+        const col = i % cols;
+        
+        // Base grid position
+        const baseLeft = margin + (col / (cols - 1)) * availableWidth;
+        const baseTop = margin + (row / (rows - 1)) * availableHeight;
+        
+        // Use distance measurement to add variation
+        // Normalize distance to 0-1 range
+        const distanceNorm = (buildingSensors[i].distance - minDistance) / (maxDistance - minDistance || 1);
+        
+        // Add offset based on distance (sensors with larger distances spread out more)
+        const leftOffset = (Math.random() - 0.5) * 8 + (distanceNorm - 0.5) * 4;
+        const topOffset = (Math.random() - 0.5) * 6 + (distanceNorm - 0.5) * 3;
+        
+        positions.push({
+            x: Math.max(margin, Math.min(100 - margin, baseLeft + leftOffset)),
+            y: Math.max(margin, Math.min(100 - margin, baseTop + topOffset))
+        });
+    }
+    
+    // Normalize to ensure all sensors are visible and spread out
+    let minX = Math.min(...positions.map(p => p.x));
+    let maxX = Math.max(...positions.map(p => p.x));
+    let minY = Math.min(...positions.map(p => p.y));
+    let maxY = Math.max(...positions.map(p => p.y));
+    
+    // Ensure we have a range
+    if (maxX === minX) { maxX = minX + 1; }
+    if (maxY === minY) { maxY = minY + 1; }
+    
+    const rangeX = maxX - minX;
+    const rangeY = maxY - minY;
+    
+    // Scale to fit with margin
+    for (let i = 0; i < positions.length; i++) {
+        const normalizedX = ((positions[i].x - minX) / rangeX) * (100 - 2 * margin) + margin;
+        const normalizedY = ((positions[i].y - minY) / rangeY) * (100 - 2 * margin) + margin;
+        
+        buildingSensors[i].left = normalizedX;
+        buildingSensors[i].top = normalizedY;
+    }
+}
+
+calculatePositions();
+
+// Single floor structure
 const buildingLevels = [
     {
         id: 'level-1',
-        label: 'Level 1',
-        sensors: [
-            { name: 'ESP-North', status: 'active', distance: '12.4 m', top: 20, left: 25 },
-            { name: 'ESP-East', status: 'active', distance: '9.8 m', top: 35, left: 70 },
-            { name: 'ESP-West', status: 'inactive', distance: '15.1 m', top: 52, left: 18 },
-            { name: 'ESP-Lab', status: 'active', distance: '7.2 m', top: 55, left: 58 },
-            { name: 'ESP-Office', status: 'inactive', distance: '5.9 m', top: 72, left: 40 },
-            { name: 'ESP-Storage', status: 'active', distance: '18.6 m', top: 78, left: 78 }
-        ]
-    },
-    {
-        id: 'level-2',
-        label: 'Level 2',
-        sensors: [
-            { name: 'ESP-North 2', status: 'active', distance: '11.1 m', top: 18, left: 30 },
-            { name: 'ESP-East 2', status: 'inactive', distance: '10.4 m', top: 33, left: 63 },
-            { name: 'ESP-West 2', status: 'active', distance: '8.6 m', top: 48, left: 20 },
-            { name: 'ESP-Lab 2', status: 'active', distance: '6.4 m', top: 50, left: 57 },
-            { name: 'ESP-Office 2', status: 'inactive', distance: '6.8 m', top: 65, left: 45 },
-            { name: 'ESP-Storage 2', status: 'active', distance: '14.2 m', top: 75, left: 75 }
-        ]
-    },
-    {
-        id: 'level-3',
-        label: 'Level 3',
-        sensors: [
-            { name: 'ESP Research', status: 'inactive', distance: '12.9 m', top: 18, left: 52 },
-            { name: 'ESP South Hall', status: 'active', distance: '20.4 m', top: 32, left: 75 },
-            { name: 'ESP Admin', status: 'active', distance: '9.3 m', top: 38, left: 33 },
-            { name: 'ESP Data Center', status: 'inactive', distance: '17.2 m', top: 58, left: 65 },
-            { name: 'ESP Breakout', status: 'active', distance: '13.7 m', top: 68, left: 35 },
-            { name: 'ESP Atrium', status: 'active', distance: '8.5 m', top: 78, left: 70 }
-        ]
+        label: 'Building Floor',
+        sensors: buildingSensors
     }
 ];
 
-function renderLevelButtons() {
-    levelSwitcher.innerHTML = '';
-    buildingLevels.forEach((level, index) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `level-button ${index === 0 ? 'active' : ''}`;
-        button.textContent = level.label;
-        button.dataset.levelId = level.id;
-        button.addEventListener('click', () => setActiveLevel(level.id));
-        levelSwitcher.appendChild(button);
-    });
-}
-
-function setActiveLevel(levelId) {
-    document.querySelectorAll('.level-button').forEach((button) => {
-        button.classList.toggle('active', button.dataset.levelId === levelId);
-    });
-
-    const level = buildingLevels.find((lvl) => lvl.id === levelId);
-    if (!level) return;
-    renderSensors(level.sensors);
-    renderSummary(level.sensors);
+// Initialize with the single floor
+function initializeFacilityMap() {
+    const level = buildingLevels[0];
+    if (level) {
+        renderSensors(level.sensors);
+        renderSummary(level.sensors);
+    }
 }
 
 function renderSensors(sensors) {
     currentSensors = sensors;
     selectedSensorName = null;
     buildingGrid.innerHTML = '';
+    
+    // Calculate sensor size based on total count (more sensors = smaller dots)
+    // Base size decreases as sensor count increases
+    const baseSize = Math.max(8, 24 - (sensors.length * 0.2)); // Scales from 24px to 8px
+    document.documentElement.style.setProperty('--esp-size', `${baseSize}px`);
+    
     sensors.forEach((sensor) => {
         const point = document.createElement('div');
         point.className = 'esp-point';
@@ -368,8 +425,7 @@ function renderSummary(sensors) {
 
 function sumDistances(sensors) {
     const total = sensors.reduce((sum, sensor) => {
-        const value = parseFloat(sensor.distance);
-        return Number.isFinite(value) ? sum + value : sum;
+        return Number.isFinite(sensor.distance) ? sum + sensor.distance : sum;
     }, 0);
     return `${total.toFixed(1)} m`;
 }
@@ -408,10 +464,9 @@ function updateDistanceLabels() {
 }
 
 function calculateRelativeDistance(sensorA, sensorB) {
-    const deltaX = sensorA.left - sensorB.left;
-    const deltaY = sensorA.top - sensorB.top;
-    const planarDistance = Math.hypot(deltaX, deltaY);
-    return planarDistance * 0.6;
+    // Use the average of both sensors' distance measurements as the relative distance
+    // This represents the actual measured distance between sensors
+    return (sensorA.distance + sensorB.distance) / 2;
 }
 
 function formatMeters(value) {
@@ -446,9 +501,8 @@ function updateRelativePanel() {
         });
 }
 
-if (buildingGrid && levelSwitcher && statusSummary && relativeDistances) {
-    renderLevelButtons();
-    setActiveLevel(buildingLevels[0].id);
+if (buildingGrid && statusSummary && relativeDistances) {
+    initializeFacilityMap();
 }
 
 // Update the dashboard every 3 seconds

@@ -18,9 +18,21 @@ export default async function handler(req, res) {
   // Frontend fetches the latest reading with GET /api/ingest
   if (req.method === 'GET') {
     if (!latestReading) {
+      // Return zero values when no data is available
       return res
         .status(200)
-        .json({ ok: false, hasReading: false, message: 'No sensor data received yet' });
+        .json({ 
+          ok: true, 
+          hasReading: false, 
+          reading: {
+            mac: null,
+            temperature: 0,
+            co2: 0,
+            humidity: 0,
+            ts: Date.now()
+          },
+          message: 'No sensor data received yet' 
+        });
     }
     return res
       .status(200)
