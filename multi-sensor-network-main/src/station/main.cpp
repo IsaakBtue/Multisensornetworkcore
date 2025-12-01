@@ -180,7 +180,7 @@ void setup() {
             esp_deep_sleep_start();
             break;
 
-        case STATE_READ_VALUE:
+        case STATE_READ_VALUE: {
             // we woke up from short sleep
             // Time to read the value and send it
             Serial.println("\n=== Woke up from measurement sleep ===");
@@ -257,6 +257,7 @@ void setup() {
               esp_restart();
             }
             break;
+        }
 
         case STATE_CALI_ROUTINE:
             
