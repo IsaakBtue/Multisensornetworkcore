@@ -13,11 +13,11 @@
     },
     {
       "src": "/(.*\\.(html|css|js|png|jpg|jpeg|gif|svg|ico))",
-      "dest": "/gateway-server/$1"
+      "dest": "/multi-sensor-network-main/gateway-server/$1"
     },
     {
       "src": "/",
-      "dest": "/gateway-server/index.html"
+      "dest": "/multi-sensor-network-main/gateway-server/index.html"
     }
   ]
 }
