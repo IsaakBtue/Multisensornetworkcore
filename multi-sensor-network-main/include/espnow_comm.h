@@ -157,133 +157,16 @@ void sendToServer(const Station* st) {
   Serial.printf("Connecting to: %s\n", fullUrl.c_str());
   Serial.printf("Protocol: %s\n", useHTTPS ? "HTTPS" : "HTTP");
   
-  // Try HTTP first (simpler, no SSL handshake issues)
-  if (!useHTTPS) {
-    Serial.println("Using HTTP (no SSL/TLS required)");
-    WiFiClient regularClient;
-    connectionSuccess = http.begin(regularClient, fullUrl);
-    
-    if (connectionSuccess) {
-      Serial.println("✓ HTTP connection established");
-    } else {
-      Serial.println("✗ HTTP connection failed");
-      return;
-    }
-  } else {
-    // Try HTTPS (may fail due to TLS version mismatch)
-    Serial.println("Using HTTPS (SSL/TLS required)");
-    #if HAS_WIFI_CLIENT_SECURE
-      WiFiClientSecure client;
-      client.setInsecure(); // Skip certificate validation
-      client.setTimeout(30000);
-      
-      // Parse URL to get hostname and path
-      String host;
-    String path = "/api/ingest";
-    
-    if (fullUrl.startsWith("https://")) {
-      String url = fullUrl.substring(8); // Remove "https://"
-      int pathIndex = url.indexOf('/');
-      host = (pathIndex > 0) ? url.substring(0, pathIndex) : url;
-      path = (pathIndex > 0) ? url.substring(pathIndex) : "/";
-    } else {
-      host = fullUrl;
-    }
-    
-    Serial.printf("Connecting to: %s\n", fullUrl.c_str());
-    Serial.printf("Host: %s, Path: %s\n", host.c_str(), path.c_str());
-    
-    // Try DNS resolution for logging (non-blocking - HTTPClient will handle DNS)
-    IPAddress serverIP;
-    Serial.print("DNS lookup (for info only)... ");
-    int dnsResult = WiFi.hostByName(host.c_str(), serverIP);
-    if (dnsResult == 1) {
-      Serial.print("SUCCESS! IP: ");
-      Serial.println(serverIP);
-    } else {
-      Serial.println("FAILED (HTTPClient will retry DNS)");
-    }
-    
-    // CRITICAL: Use the hostname (not IP) in http.begin() to ensure SNI is sent
-    // SNI (Server Name Indication) is required for Vercel CDN to route correctly
-    Serial.println("Establishing HTTPS connection via HTTPClient...");
-    Serial.println("Using hostname (not IP) to ensure SNI is sent correctly");
-    
-    // Method 1: Use hostname with port 443 and path - this should send SNI correctly
-    connectionSuccess = http.begin(client, host, 443, path, true);
-    
-    if (!connectionSuccess) {
-      Serial.println("Method 1 failed: http.begin(host, 443, path)");
-      Serial.println("Trying Method 2: http.begin(fullUrl)...");
-      // Method 2: Try with full URL - HTTPClient should parse and set SNI
-      connectionSuccess = http.begin(client, fullUrl);
-    }
-    
-    if (!connectionSuccess) {
-      Serial.println("Method 2 failed: http.begin(fullUrl)");
-      Serial.println("Trying Method 3: Manual connection with explicit SNI...");
-      
-      // Method 3: Try connecting manually first, then use connected client
-      // This gives us more control over the SSL handshake
-      Serial.printf("Attempting manual SSL connection to %s:443...\n", host.c_str());
-      if (client.connect(host.c_str(), 443)) {
-        Serial.println("✓ Manual SSL connection successful!");
-        // Now try to use the connected client
-        // Note: HTTPClient.begin() with an already-connected client may not work
-        // So we'll try a different approach - use the client directly
-        connectionSuccess = http.begin(client, host, 443, path, true);
-        if (!connectionSuccess) {
-          Serial.println("ERROR: http.begin() failed even after manual connect");
-          client.stop();
-        }
-      } else {
-        char errorBuf[256];
-        int errorCode = client.lastError(errorBuf, sizeof(errorBuf));
-        Serial.printf("✗ Manual SSL connection failed (error code: %d)\n", errorCode);
-        if (strlen(errorBuf) > 0) {
-          Serial.printf("Error details: %s\n", errorBuf);
-        }
-        Serial.println("This indicates the SSL/TLS handshake cannot complete");
-        Serial.println("Possible causes:");
-        Serial.println("  1. TLS version mismatch (ESP32 supports TLS 1.2, server may require 1.3)");
-        Serial.println("  2. Router/firewall blocking SSL connections");
-        Serial.println("  3. Vercel CDN rejecting connection without proper SNI");
-        Serial.println("  4. Certificate validation issues");
-      }
-    }
-  #else
-    Serial.println("ERROR: WiFiClientSecure not available");
-    Serial.println("HTTPS requires WiFiClientSecure which is not in this framework version");
-    return;
-  #endif
+  // Use simple HTTP (like the fake data route) - no SSL/TLS complications
+  Serial.println("Using HTTP (simple protocol, no SSL/TLS)");
+  WiFiClient regularClient;
+  connectionSuccess = http.begin(regularClient, fullUrl);
   
-  // If HTTPS failed, try HTTP as last resort (will get 308 redirect, but worth trying)
   if (!connectionSuccess) {
-    Serial.println("HTTPS connection failed - ESP32 cannot connect to Vercel CDN");
-    Serial.println("This is a known limitation: ESP32 WiFiClientSecure cannot complete");
-    Serial.println("SSL handshake with Vercel's CDN (likely TLS version mismatch)");
-    Serial.println("");
-    Serial.println("SOLUTION REQUIRED:");
-    Serial.println("1. Use a different backend service that supports HTTP or older TLS");
-    Serial.println("2. Use a simple HTTP-to-HTTPS bridge service");
-    Serial.println("3. Deploy to a service that ESP32 can connect to (e.g., Firebase, AWS IoT)");
-    Serial.println("");
-    Serial.println("Attempting HTTP connection as fallback (will likely fail with redirect)...");
-    
-    // Try HTTP as absolute last resort
-    WiFiClient regularClient;
-    String httpUrl = String(WEB_SERVER_URL);
-    httpUrl.replace("https://", "http://");
-    connectionSuccess = http.begin(regularClient, httpUrl);
-    
-    if (!connectionSuccess) {
-      Serial.println("HTTP connection also failed");
-      return;
-    }
-    Serial.println("HTTP connection established (will redirect to HTTPS)");
-  } else {
-    Serial.println("HTTPS connection established successfully");
+    Serial.println("✗ HTTP connection failed");
+    return;
   }
+  Serial.println("✓ HTTP connection established");
   
   // Configure HTTP client
   http.addHeader("Content-Type", "application/json");
@@ -370,54 +253,7 @@ void sendToServer(const Station* st) {
       Serial.println("Error -11: Read timeout");
     }
     
-    Serial.println("This may indicate HTTPS/TLS issues");
-    
-    // If HTTPS failed, try HTTP as absolute last resort
-    if (httpCode == -1) {
-      Serial.println("");
-      Serial.println("=== Trying HTTP fallback ===");
-      http.end(); // Clean up HTTPS connection
-      
-      WiFiClient regularClient;
-      String httpUrl = String(WEB_SERVER_URL);
-      httpUrl.replace("https://", "http://");
-      
-      Serial.printf("Attempting HTTP connection to: %s\n", httpUrl.c_str());
-      if (http.begin(regularClient, httpUrl)) {
-        http.addHeader("Content-Type", "application/json");
-        http.setTimeout(10000);
-        
-        // Rebuild payload for HTTP attempt
-        char* httpPayload = (char*)malloc(100);
-        if (httpPayload) {
-          snprintf(httpPayload, 100, 
-                   "{\"mac\":\"%s\",\"temperature\":%.2f,\"co2\":%d,\"humidity\":%.2f}",
-                   macStr, st->readings.temperature, st->readings.co2, st->readings.humidity);
-          
-          int httpCode2 = http.POST((uint8_t*)httpPayload, strlen(httpPayload));
-          free(httpPayload);
-          
-          if (httpCode2 == 308) {
-            Serial.println("HTTP returned 308 redirect - Vercel redirects HTTP to HTTPS");
-            Serial.println("POST data is lost during redirect - this won't work");
-          } else if (httpCode2 > 0) {
-            Serial.printf("HTTP response: %d\n", httpCode2);
-          }
-        }
-        http.end();
-      } else {
-        Serial.println("HTTP connection also failed");
-      }
-      Serial.println("=== End HTTP fallback ===");
-      Serial.println("");
-      Serial.println("SOLUTION REQUIRED:");
-      Serial.println("ESP32 cannot connect to Vercel CDN via HTTPS");
-      Serial.println("Options:");
-      Serial.println("1. Use a different backend (Firebase, AWS IoT, etc.)");
-      Serial.println("2. Use an HTTP-to-HTTPS bridge service");
-      Serial.println("3. Deploy to a service that supports TLS 1.2");
-      return; // Exit early to prevent heap corruption
-    }
+    Serial.println("This may indicate connection issues");
   }
   
   // Always clean up properly to prevent heap corruption
