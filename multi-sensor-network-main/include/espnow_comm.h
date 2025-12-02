@@ -173,13 +173,12 @@ void sendToServer(const Station* st) {
     // Try HTTPS (may fail due to TLS version mismatch)
     Serial.println("Using HTTPS (SSL/TLS required)");
     #if HAS_WIFI_CLIENT_SECURE
-    WiFiClientSecure client;
-    client.setInsecure(); // Skip certificate validation
-    client.setTimeout(30000);
-    
-    // Parse URL to get hostname and path
-    String fullUrl = String(WEB_SERVER_URL);
-    String host;
+      WiFiClientSecure client;
+      client.setInsecure(); // Skip certificate validation
+      client.setTimeout(30000);
+      
+      // Parse URL to get hostname and path
+      String host;
     String path = "/api/ingest";
     
     if (fullUrl.startsWith("https://")) {
