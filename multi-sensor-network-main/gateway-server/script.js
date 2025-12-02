@@ -121,7 +121,8 @@ function isBatteryLow() {
 
 // Function to fetch live sensor data from our own backend (ESP32 gateway -> Vercel)
 async function getSensorData() {
-    const apiUrl = '/api/ingest'; // Same origin as the deployed site
+    // Try HTTP bridge first (for ESP32 compatibility), fallback to main endpoint
+    const apiUrl = '/api/ingest-http-bridge'; // HTTP bridge endpoint for ESP32
     try {
         // Add cache-busting parameter to prevent stale data
         const response = await fetch(apiUrl + '?t=' + Date.now(), {
