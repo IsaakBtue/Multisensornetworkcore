@@ -134,22 +134,25 @@ void sendToServer(const Station* st) {
     return;
   }
 
+  // CRITICAL: ESP32 cannot establish HTTPS connections to Vercel CDN
+  // The SSL/TLS handshake consistently fails due to TLS version/cipher mismatch
+  // Solution: Use regular HTTPClient with WiFiClient (not Secure) as fallback
+  // Note: This will fail with 308 redirect, but we'll try it anyway
+  
   HTTPClient http;
   bool connectionSuccess = false;
   
-  // Use WiFiClientSecure for HTTPS connection
+  // Check free heap memory
+  Serial.printf("Free heap before connection: %d bytes\n", ESP.getFreeHeap());
+  if (ESP.getFreeHeap() < 50000) {
+    Serial.println("WARNING: Low free heap memory");
+  }
+  
+  // Try HTTPS first (will likely fail, but worth trying)
   #if HAS_WIFI_CLIENT_SECURE
-    // Check free heap memory before SSL handshake (needs 40-50 KB)
-    Serial.printf("Free heap before SSL: %d bytes\n", ESP.getFreeHeap());
-    if (ESP.getFreeHeap() < 50000) {
-      Serial.println("WARNING: Low free heap memory - SSL handshake may fail");
-    }
-    
     WiFiClientSecure client;
-    
-    // Configure client for better compatibility
-    client.setInsecure(); // Skip certificate validation for testing
-    client.setTimeout(30000); // Increase timeout for SSL handshake
+    client.setInsecure(); // Skip certificate validation
+    client.setTimeout(30000);
     
     // Parse URL to get hostname and path
     String fullUrl = String(WEB_SERVER_URL);
@@ -232,17 +235,38 @@ void sendToServer(const Station* st) {
     return;
   #endif
   
+  // If HTTPS failed, try HTTP as last resort (will get 308 redirect, but worth trying)
   if (!connectionSuccess) {
-    Serial.println("ERROR: Failed to establish HTTPS connection");
-    return;
+    Serial.println("HTTPS connection failed - ESP32 cannot connect to Vercel CDN");
+    Serial.println("This is a known limitation: ESP32 WiFiClientSecure cannot complete");
+    Serial.println("SSL handshake with Vercel's CDN (likely TLS version mismatch)");
+    Serial.println("");
+    Serial.println("SOLUTION REQUIRED:");
+    Serial.println("1. Use a different backend service that supports HTTP or older TLS");
+    Serial.println("2. Use a simple HTTP-to-HTTPS bridge service");
+    Serial.println("3. Deploy to a service that ESP32 can connect to (e.g., Firebase, AWS IoT)");
+    Serial.println("");
+    Serial.println("Attempting HTTP connection as fallback (will likely fail with redirect)...");
+    
+    // Try HTTP as absolute last resort
+    WiFiClient regularClient;
+    String httpUrl = String(WEB_SERVER_URL);
+    httpUrl.replace("https://", "http://");
+    connectionSuccess = http.begin(regularClient, httpUrl);
+    
+    if (!connectionSuccess) {
+      Serial.println("HTTP connection also failed");
+      return;
+    }
+    Serial.println("HTTP connection established (will redirect to HTTPS)");
+  } else {
+    Serial.println("HTTPS connection established successfully");
   }
-  
-  Serial.println("HTTPS connection established successfully");
   
   // Configure HTTP client
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(20000); // 20 second timeout for HTTPS
-  http.setReuse(false); // Don't reuse for HTTPS
+  http.setTimeout(20000);
+  http.setReuse(false);
   
   // Build MAC string
   char macStr[18];
