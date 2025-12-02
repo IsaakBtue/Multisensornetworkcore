@@ -75,8 +75,19 @@ void connectToWiFi() {
             Serial.println("FAILED - This domain may not resolve");
         }
         
+        // Test Supabase domain DNS resolution
+        Serial.print("Testing DNS with hvmhlvaoovmyctmctqyb.supabase.co... ");
+        IPAddress supabaseIP;
+        if (WiFi.hostByName("hvmhlvaoovmyctmctqyb.supabase.co", supabaseIP) == 1) {
+            Serial.print("SUCCESS! IP: ");
+            Serial.println(supabaseIP);
+        } else {
+            Serial.println("FAILED - Supabase domain may not resolve");
+            Serial.println("This will cause connection issues. Check DNS settings.");
+        }
+        
         Serial.print("Gateway will forward data to: ");
-        Serial.println(WEB_SERVER_URL);
+        Serial.println(SUPABASE_EDGE_FUNCTION_URL);
     } else {
         Serial.println("WiFi connection failed, continuing with ESP-NOW only");
         Serial.println("Note: Data will not be forwarded to web server without WiFi");
@@ -101,8 +112,8 @@ void setup() {
     Serial.println("=== Gateway Ready ===");
     Serial.println("========================================");
     Serial.println("Status: Listening for ESP-NOW packets");
-    Serial.println("Action: Received data will be forwarded to web server");
-    Serial.printf("Web Server: %s\n", WEB_SERVER_URL);
+    Serial.println("Action: Received data will be forwarded to Supabase Edge Function");
+    Serial.printf("Supabase Edge Function: %s\n", SUPABASE_EDGE_FUNCTION_URL);
     
     // Print gateway MAC address for debugging
     Serial.print("Gateway MAC Address: ");

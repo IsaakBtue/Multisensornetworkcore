@@ -27,6 +27,12 @@ bool needCalibration = true;      // set to true by default, turned into false i
 // Fill these in with your own network and server details.
 #define WIFI_SSID      "Odido-20E8A1"
 #define WIFI_PASSWORD  "N3GMVKDJQA9EYQRF"
-// Web server endpoint for sensor data ingestion
-// Use HTTP bridge endpoint that accepts HTTP from ESP32
-#define WEB_SERVER_URL "http://multisensornetwork.vercel.app/api/ingest-http-bridge"
+
+// Use Vercel HTTP proxy to bypass ESP32 SSL/TLS issues
+// The proxy accepts HTTP and forwards to Supabase Edge Function over HTTPS
+#define SUPABASE_EDGE_FUNCTION_URL "http://multisensornetwork.vercel.app/api/supabase-proxy"
+
+// API key for Supabase Edge Function authentication
+// This matches the TELEMETRY_API_KEY secret set in Supabase
+// Note: The proxy will add this header, but we keep it for consistency
+#define SUPABASE_API_KEY "Isaak124"

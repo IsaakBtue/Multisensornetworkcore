@@ -119,10 +119,10 @@ function isBatteryLow() {
     return Math.random() < 0.1; 
 }
 
-// Function to fetch live sensor data from our own backend (ESP32 gateway -> Vercel)
+// Function to fetch live sensor data from Supabase database
 async function getSensorData() {
-    // Try HTTP bridge first (for ESP32 compatibility), fallback to main endpoint
-    const apiUrl = '/api/ingest-http-bridge'; // HTTP bridge endpoint for ESP32
+    // Read from Supabase via Vercel API endpoint
+    const apiUrl = '/api/ingest-supabase'; // Supabase-backed endpoint
     try {
         // Add cache-busting parameter to prevent stale data
         const response = await fetch(apiUrl + '?t=' + Date.now(), {
@@ -139,7 +139,7 @@ async function getSensorData() {
         // Debug logging
         console.log('API Response:', data);
 
-        if (!data.ok || !data.reading) {
+        if (!data.ok || !data.hasReading || !data.reading) {
             // Return zero values when no data is available
             console.log('No reading available, returning zeros');
             return {

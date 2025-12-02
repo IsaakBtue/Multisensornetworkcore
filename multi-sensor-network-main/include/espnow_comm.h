@@ -150,17 +150,26 @@ void sendToServer(const Station* st) {
     Serial.println("WARNING: Low free heap memory");
   }
   
-  // Parse URL to determine if HTTP or HTTPS
-  String fullUrl = String(WEB_SERVER_URL);
+  // Use Vercel HTTP proxy (bypasses ESP32 SSL/TLS issues)
+  // The proxy accepts HTTP and forwards to Supabase Edge Function
+  String fullUrl = String(SUPABASE_EDGE_FUNCTION_URL);
   bool useHTTPS = fullUrl.startsWith("https://");
   
-  Serial.printf("Connecting to: %s\n", fullUrl.c_str());
+  Serial.printf("Connecting to Vercel proxy: %s\n", fullUrl.c_str());
   Serial.printf("Protocol: %s\n", useHTTPS ? "HTTPS" : "HTTP");
   
-  // Use simple HTTP (like the fake data route) - no SSL/TLS complications
-  Serial.println("Using HTTP (simple protocol, no SSL/TLS)");
+  // Use simple HTTP client (no SSL needed for Vercel proxy)
   WiFiClient regularClient;
-  connectionSuccess = http.begin(regularClient, fullUrl);
+  
+  if (useHTTPS && HAS_WIFI_CLIENT_SECURE) {
+    // If URL is HTTPS, try secure connection
+    WiFiClientSecure secureClient;
+    secureClient.setInsecure();
+    connectionSuccess = http.begin(secureClient, fullUrl);
+  } else {
+    // Use regular HTTP (Vercel proxy accepts HTTP)
+    connectionSuccess = http.begin(regularClient, fullUrl);
+  }
   
   if (!connectionSuccess) {
     Serial.println("✗ HTTP connection failed");
@@ -168,23 +177,31 @@ void sendToServer(const Station* st) {
   }
   Serial.println("✓ HTTP connection established");
   
-  // Configure HTTP client
+  if (!connectionSuccess) {
+    Serial.println("✗ HTTP connection failed");
+    return;
+  }
+  Serial.println("✓ HTTP connection established");
+  
+  // Configure HTTP client headers
   http.addHeader("Content-Type", "application/json");
+  // Note: X-API-Key is handled by the Vercel proxy, but we can include it for consistency
   http.setTimeout(20000);
   http.setReuse(false);
   
-  // Build MAC string
+  // Build MAC string for device_id
   char macStr[18];
   snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
            st->mac[0], st->mac[1], st->mac[2],
            st->mac[3], st->mac[4], st->mac[5]);
 
-  // Build JSON payload matching the API endpoint format
+  // Build JSON payload matching Supabase Edge Function format
+  // The Edge Function accepts: device_id (or MAC), temperature, humidity, co2
   String payload = "{";
-  payload += "\"mac\":\""; payload += macStr; payload += "\",";
+  payload += "\"device_id\":\""; payload += macStr; payload += "\",";
   payload += "\"temperature\":"; payload += String(st->readings.temperature, 2); payload += ",";
-  payload += "\"co2\":"; payload += String(st->readings.co2); payload += ",";
-  payload += "\"humidity\":"; payload += String(st->readings.humidity, 2);
+  payload += "\"humidity\":"; payload += String(st->readings.humidity, 2); payload += ",";
+  payload += "\"co2\":"; payload += String(st->readings.co2);
   payload += "}";
 
   Serial.print("Sending data to server: ");
