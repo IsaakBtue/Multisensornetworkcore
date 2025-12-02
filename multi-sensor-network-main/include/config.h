@@ -27,5 +27,7 @@ bool needCalibration = true;      // set to true by default, turned into false i
 // Fill these in with your own network and server details.
 #define WIFI_SSID      "Odido-20E8A1"
 #define WIFI_PASSWORD  "N3GMVKDJQA9EYQRF"
-// Vercel web server endpoint for sensor data ingestion (HTTPS required)
-#define WEB_SERVER_URL "https://multisensornetwork.vercel.app/api/ingest"
+// Web server endpoint for sensor data ingestion
+// Try HTTP first - if your server supports it, use http://
+// If server requires HTTPS, use https:// (but ESP32 may have TLS issues)
+#define WEB_SERVER_URL "http://multisensornetwork.vercel.app/api/ingest"

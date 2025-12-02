@@ -150,8 +150,29 @@ void sendToServer(const Station* st) {
     Serial.println("WARNING: Low free heap memory");
   }
   
-  // Try HTTPS first (will likely fail, but worth trying)
-  #if HAS_WIFI_CLIENT_SECURE
+  // Parse URL to determine if HTTP or HTTPS
+  String fullUrl = String(WEB_SERVER_URL);
+  bool useHTTPS = fullUrl.startsWith("https://");
+  
+  Serial.printf("Connecting to: %s\n", fullUrl.c_str());
+  Serial.printf("Protocol: %s\n", useHTTPS ? "HTTPS" : "HTTP");
+  
+  // Try HTTP first (simpler, no SSL handshake issues)
+  if (!useHTTPS) {
+    Serial.println("Using HTTP (no SSL/TLS required)");
+    WiFiClient regularClient;
+    connectionSuccess = http.begin(regularClient, fullUrl);
+    
+    if (connectionSuccess) {
+      Serial.println("✓ HTTP connection established");
+    } else {
+      Serial.println("✗ HTTP connection failed");
+      return;
+    }
+  } else {
+    // Try HTTPS (may fail due to TLS version mismatch)
+    Serial.println("Using HTTPS (SSL/TLS required)");
+    #if HAS_WIFI_CLIENT_SECURE
     WiFiClientSecure client;
     client.setInsecure(); // Skip certificate validation
     client.setTimeout(30000);
