@@ -1,4 +1,3 @@
-
 // Vercel serverless function for /api/ingest
 // This endpoint supports:
 // - POST: called by the ESP32 gateway to send new sensor readings

@@ -1,0 +1,66 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{enumitem}
+
+\title{ESP32 WiFi Configuration via Button Mode}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Overview}
+This system allows users to configure WiFi credentials on an ESP32 device wirelessly using a smartphone, without needing to modify code or connect to a computer. The device creates its own WiFi network for configuration.
+
+\section{How It Works}
+
+\subsection{Entering Configuration Mode}
+\begin{itemize}
+    \item Connect GPIO pins 32 and 34 together (momentary button press)
+    \item ESP32 detects the connection and enters configuration mode
+    \item Device creates a WiFi access point named ``ESP32\_Config''
+    \item Configuration portal becomes available at IP address 192.168.4.1
+\end{itemize}
+
+\subsection{Configuring WiFi}
+\begin{enumerate}
+    \item Connect your smartphone to the ``ESP32\_Config'' WiFi network
+    \item Configuration page opens automatically (captive portal)
+    \item Select your home WiFi network from the list
+    \item Enter your WiFi password
+    \item Click ``Save'' to store credentials
+\end{enumerate}
+
+\subsection{After Configuration}
+\begin{itemize}
+    \item ESP32 saves WiFi credentials to flash memory
+    \item Device automatically restarts and connects to your WiFi
+    \item Sends a ``Connected!'' message to the web server to confirm setup
+    \item On future power cycles, ESP32 automatically connects using saved credentials
+\end{itemize}
+
+\subsection{Resetting WiFi}
+\begin{itemize}
+    \item Press the button (connect GPIO 32-34) at any time
+    \item ESP32 clears saved WiFi credentials
+    \item Device restarts and enters configuration mode again
+    \item Allows reconfiguration to a different WiFi network
+\end{itemize}
+
+\section{Technical Details}
+\begin{itemize}
+    \item Uses WiFiManager library for automatic captive portal functionality
+    \item Credentials stored in ESP32's Preferences (non-volatile flash memory)
+    \item Button detection uses GPIO 32 (output) and GPIO 34 (input-only)
+    \item Configuration portal accessible via any web browser on connected device
+\end{itemize}
+
+\end{document}
+
+
+
+
+
+

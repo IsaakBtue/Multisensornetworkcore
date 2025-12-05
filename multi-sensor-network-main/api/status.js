@@ -9,7 +9,6 @@ export default async function handler(req, res) {
   return res.status(200).json({
     status: 'ok',
     platform: 'vercel',
-    note: 'Real-time SSE connections are not supported on Vercel serverless functions',
     endpoints: {
       ingest: 'POST /api/ingest',
       status: 'GET /api/status',

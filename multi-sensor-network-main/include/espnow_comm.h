@@ -10,15 +10,10 @@
 #include "typedef.h"
 #include "config.h"
 
-// For HTTPS support on ESP32 - try to include WiFiClientSecure
+// HTTP support - ESP32-S3 Arduino framework doesn't include WiFiClientSecure in version 3.3.4
+// Using HTTP to Cloudflare Worker which forwards to HTTPS Vercel
 #ifdef ROLE_GATEWAY
-  #ifdef ESP32
-    // Try including WiFiClientSecure - it should be available in ESP32 framework
-    #include <WiFiClientSecure.h>
-    #define HAS_WIFI_CLIENT_SECURE 1
-  #else
-    #define HAS_WIFI_CLIENT_SECURE 0
-  #endif
+  #define HAS_WIFI_CLIENT_SECURE 0
 #else
   #define HAS_WIFI_CLIENT_SECURE 0
 #endif
@@ -136,13 +131,7 @@ void sendToServer(const Station* st) {
     return;
   }
 
-  // CRITICAL: ESP32 cannot establish HTTPS connections to Vercel CDN
-  // The SSL/TLS handshake consistently fails due to TLS version/cipher mismatch
-  // Solution: Use regular HTTPClient with WiFiClient (not Secure) as fallback
-  // Note: This will fail with 308 redirect, but we'll try it anyway
-  
-  HTTPClient http;
-  bool connectionSuccess = false;
+  // Using WiFiClientSecure for HTTPS connections (works on ESP32-S3!)
   
   // Check free heap memory
   Serial.printf("Free heap before connection: %d bytes\n", ESP.getFreeHeap());
@@ -150,44 +139,36 @@ void sendToServer(const Station* st) {
     Serial.println("WARNING: Low free heap memory");
   }
   
-  // Use Vercel HTTP proxy (bypasses ESP32 SSL/TLS issues)
-  // The proxy accepts HTTP and forwards to Supabase Edge Function
   String fullUrl = String(SUPABASE_EDGE_FUNCTION_URL);
   bool useHTTPS = fullUrl.startsWith("https://");
   
-  Serial.printf("Connecting to Vercel proxy: %s\n", fullUrl.c_str());
+  Serial.printf("Connecting to server: %s\n", fullUrl.c_str());
   Serial.printf("Protocol: %s\n", useHTTPS ? "HTTPS" : "HTTP");
   
-  // Use simple HTTP client (no SSL needed for Vercel proxy)
-  WiFiClient regularClient;
-  
-  if (useHTTPS && HAS_WIFI_CLIENT_SECURE) {
-    // If URL is HTTPS, try secure connection
-    WiFiClientSecure secureClient;
-    secureClient.setInsecure();
-    connectionSuccess = http.begin(secureClient, fullUrl);
-  } else {
-    // Use regular HTTP (Vercel proxy accepts HTTP)
-    connectionSuccess = http.begin(regularClient, fullUrl);
+  // Extract domain and path from URL
+  String domain = fullUrl;
+  int protocolEnd = domain.indexOf("://");
+  if (protocolEnd > 0) {
+    domain = domain.substring(protocolEnd + 3);
   }
   
-  if (!connectionSuccess) {
-    Serial.println("✗ HTTP connection failed");
-    return;
+  String path = "/";
+  int pathStart = domain.indexOf("/");
+  if (pathStart > 0) {
+    path = domain.substring(pathStart);
+    domain = domain.substring(0, pathStart);
   }
-  Serial.println("✓ HTTP connection established");
   
-  if (!connectionSuccess) {
-    Serial.println("✗ HTTP connection failed");
-    return;
+  // Extract port (default 443 for HTTPS, 80 for HTTP)
+  int port = useHTTPS ? 443 : 80;
+  int portStart = domain.indexOf(":");
+  if (portStart > 0) {
+    String portStr = domain.substring(portStart + 1);
+    port = portStr.toInt();
+    domain = domain.substring(0, portStart);
   }
-  Serial.println("✓ HTTP connection established");
   
-  // Configure HTTP client headers
-  http.addHeader("Content-Type", "application/json");
-  // Note: X-API-Key is handled by the Vercel proxy, but we can include it for consistency
-  http.setTimeout(20000);
-  http.setReuse(false);
+  Serial.printf("Host: %s, Port: %d, Path: %s\n", domain.c_str(), port, path.c_str());
   
   // Build MAC string for device_id
   char macStr[18];
@@ -195,9 +176,9 @@ void sendToServer(const Station* st) {
            st->mac[0], st->mac[1], st->mac[2],
            st->mac[3], st->mac[4], st->mac[5]);
 
-  // Build JSON payload matching Supabase Edge Function format
-  // The Edge Function accepts: device_id (or MAC), temperature, humidity, co2
+  // Build JSON payload
   String payload = "{";
+  payload += "\"mac\":\""; payload += macStr; payload += "\",";
   payload += "\"device_id\":\""; payload += macStr; payload += "\",";
   payload += "\"temperature\":"; payload += String(st->readings.temperature, 2); payload += ",";
   payload += "\"humidity\":"; payload += String(st->readings.humidity, 2); payload += ",";
@@ -207,47 +188,135 @@ void sendToServer(const Station* st) {
   Serial.print("Sending data to server: ");
   Serial.println(payload);
   
-  // Add a small delay before POST to ensure connection is ready
-  delay(100);
+  int httpCode = -1;
   
-  Serial.println("Attempting HTTP POST...");
-  int httpCode = http.POST(payload);
+  // Use HTTP to Cloudflare Worker (ESP32-S3 doesn't have WiFiClientSecure in Arduino framework 3.3.4)
+  Serial.println("Using HTTP to Cloudflare Worker...");
+  WiFiClient regularClient;
   
-  Serial.printf("HTTP POST completed, response code: %d\n", httpCode);
+  // Set longer timeout for connection
+  regularClient.setTimeout(15000);
   
-  if (httpCode > 0) {
-    Serial.printf("Server response code: %d\n", httpCode);
+  Serial.printf("Attempting HTTP connection to %s:%d...\n", domain.c_str(), port);
+  Serial.printf("Domain length: %d chars\n", domain.length());
+  
+  // Try connecting with hostname (required for Cloudflare)
+  unsigned long connectStart = millis();
+  bool connected = regularClient.connect(domain.c_str(), port);
+  unsigned long connectTime = millis() - connectStart;
+  
+  Serial.printf("Connection attempt took %lu ms\n", connectTime);
+  Serial.printf("Connected: %s\n", connected ? "YES" : "NO");
+  Serial.printf("Client status: %d\n", regularClient.connected());
+  
+  if (connected) {
+    Serial.println("✓ HTTP connection established!");
     
+    // Send HTTP POST request with proper headers
+    Serial.println("Sending HTTP POST request...");
+    regularClient.print("POST ");
+    regularClient.print(path);
+    regularClient.println(" HTTP/1.1");
+    regularClient.print("Host: ");
+    regularClient.println(domain);
+    regularClient.println("Content-Type: application/json");
+    regularClient.println("User-Agent: ESP32-S3-Gateway/1.0");
+    regularClient.println("Accept: application/json");
+    regularClient.println("Connection: close");
+    regularClient.print("Content-Length: ");
+    regularClient.println(payload.length());
+    regularClient.println(); // Empty line before body
+    regularClient.print(payload);
+    regularClient.println(); // Final newline
+    
+    Serial.println("✓ HTTP POST request sent");
+    Serial.printf("Payload length: %d bytes\n", payload.length());
+    
+    // Wait for response with longer timeout
+    unsigned long timeout = millis() + 20000; // 20 second timeout
+    Serial.println("Waiting for response...");
+    int availableCount = 0;
+    while (!regularClient.available() && millis() < timeout) {
+      delay(100);
+      if (millis() % 2000 < 100) { // Print every 2 seconds
+        Serial.print(".");
+      }
+    }
+    Serial.println();
+    
+    if (regularClient.available()) {
+      Serial.println("✓ Response received!");
+      Serial.printf("Bytes available: %d\n", regularClient.available());
+      
+      String response = "";
+      unsigned long readStart = millis();
+      while (regularClient.available() || (millis() - readStart < 5000)) {
+        if (regularClient.available()) {
+          char c = regularClient.read();
+          response += c;
+          if (response.length() > 2000) break; // Limit response size
+        } else {
+          delay(10);
+        }
+      }
+      
+      Serial.printf("Response length: %d chars\n", response.length());
+      
+      // Extract status code
+      int statusCodePos = response.indexOf("HTTP/1.");
+      if (statusCodePos >= 0) {
+        int codeStart = response.indexOf(" ", statusCodePos) + 1;
+        int codeEnd = response.indexOf(" ", codeStart);
+        if (codeEnd > codeStart) {
+          httpCode = response.substring(codeStart, codeEnd).toInt();
+          Serial.printf("HTTP Status Code: %d\n", httpCode);
+        }
+      }
+      
+      Serial.print("Response (first 500 chars): ");
+      Serial.println(response.substring(0, 500));
+    } else {
+      Serial.println("✗ No response received (timeout)");
+      Serial.printf("Connection still active: %s\n", regularClient.connected() ? "YES" : "NO");
+      httpCode = -1;
+    }
+    
+    regularClient.stop();
+    Serial.println("Connection closed");
+  } else {
+    Serial.printf("✗ HTTP connection failed to %s:%d\n", domain.c_str(), port);
+    Serial.printf("Last error: %d\n", regularClient.getWriteError());
+    Serial.println("Possible causes:");
+    Serial.println("  1. Cloudflare Workers on *.workers.dev only accept HTTPS from embedded devices");
+    Serial.println("  2. Need to use custom domain with HTTP support");
+    Serial.println("  3. Firewall/router blocking outbound port 80");
+    Serial.println("  4. Cloudflare blocking embedded device connections");
+    httpCode = -1;
+  }
+  
+  // Handle response
+  if (httpCode > 0) {
     if (httpCode >= 200 && httpCode < 300) {
       Serial.println("✓ SUCCESS: Data sent successfully to web server!");
-      String response = http.getString();
-      if (response.length() > 0) {
-        Serial.print("Server response: ");
-        Serial.println(response);
-      }
       Serial.println("Data should now be visible on the website");
     } else if (httpCode == 308) {
       Serial.println("WARNING: 308 redirect received - POST data may be lost");
       Serial.println("This usually means the server redirected HTTP to HTTPS");
     } else {
       Serial.printf("Unexpected response code: %d\n", httpCode);
-      String response = http.getString();
-      if (response.length() > 0) {
-        Serial.print("Server response: ");
-        Serial.println(response);
-      }
     }
   } else {
-    Serial.printf("✗ Connection failed, error: %s (code: %d)\n", http.errorToString(httpCode).c_str(), httpCode);
+    Serial.printf("✗ Connection failed, error code: %d\n", httpCode);
     
     // More detailed error information
     if (httpCode == -1) {
-      Serial.println("Error -1: Connection failed");
-      Serial.println("Possible causes:");
-      Serial.println("  1. SSL/TLS handshake failed");
-      Serial.println("  2. Server not accepting connections");
-      Serial.println("  3. Firewall blocking the connection");
-      Serial.println("  4. SNI (Server Name Indication) not working");
+      Serial.println("Error -1: Connection refused");
+      Serial.println("Vercel blocks HTTP connections - requires HTTPS");
+      Serial.println("Solutions:");
+      Serial.println("  1. Use a local server: http://YOUR_LOCAL_IP:3000/api/ingest-http-bridge");
+      Serial.println("  2. Use a different cloud service that accepts HTTP");
+      Serial.println("  3. Set up a reverse proxy that accepts HTTP");
+      Serial.println("  4. ESP32-S3 cannot do HTTPS without WiFiClientSecure");
     } else if (httpCode == -2) {
       Serial.println("Error -2: Send header failed");
     } else if (httpCode == -3) {
@@ -273,20 +342,24 @@ void sendToServer(const Station* st) {
     Serial.println("This may indicate connection issues");
   }
   
-  // Always clean up properly to prevent heap corruption
-  http.end();
-  
+  // Connection cleanup is handled by regularClient.stop() above
   // Small delay to let cleanup complete
   delay(50);
 }
 #endif
 
 // Callback when data is received
-// Note: Both gateway and station use framework 1.0.6 which uses the old signature
-// The old signature is: (const uint8_t* mac_addr, const uint8_t* data, int len)
-void OnDataRecv(const uint8_t* mac_addr, const uint8_t* data, int len) {
-  int rssi = 0; // RSSI not directly available in old framework callback
-  // RSSI will be updated via promiscuous mode callback
+// ESP32-S3 uses new callback signature with esp_now_recv_info_t
+#if defined(ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32S3)
+  void OnDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t* data, int len) {
+    const uint8_t* mac_addr = recv_info->src_addr;
+    int rssi = recv_info->rx_ctrl->rssi;
+#else
+  // Old ESP32 signature: (const uint8_t* mac_addr, const uint8_t* data, int len)
+  void OnDataRecv(const uint8_t* mac_addr, const uint8_t* data, int len) {
+    int rssi = 0; // RSSI not directly available in old framework callback
+    // RSSI will be updated via promiscuous mode callback
+#endif
   Serial.printf("\n=== ESP-NOW Packet Received ===\n");
   Serial.printf("Timestamp: %lu ms\n", millis());
   Serial.printf("From MAC: ");

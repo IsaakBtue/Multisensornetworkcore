@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ESP Status Overview</title>
+    <title>ESP Status Overview - Single Floor</title>
     <style>
       :root {
         font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -46,24 +46,26 @@
       .building-grid {
         position: relative;
         width: 100%;
-        padding-top: 65%;
+        padding-top: 80%;
         background: radial-gradient(circle at center, #fdfdfd 0%, #f3f6fb 100%);
         border-radius: 24px;
         border: 1px dashed #d7dde8;
-        overflow: hidden;
+        overflow: visible;
+        min-height: 500px;
       }
 
       .esp-point {
         position: absolute;
-        width: 20px;
-        height: 20px;
+        width: var(--esp-size, 16px);
+        height: var(--esp-size, 16px);
         border-radius: 50%;
         transform: translate(-50%, -50%);
         border: 2px solid rgba(255, 255, 255, 0.6);
         cursor: pointer;
         transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
         background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.9) 0%, rgba(16, 185, 129, 0.9) 40%, rgba(4, 120, 87, 0.95) 80%);
-        box-shadow: 0 0 20px rgba(16, 185, 129, 0.35);
+        box-shadow: 0 0 calc(var(--esp-size, 16px) * 0.9) rgba(16, 185, 129, 0.35);
+        z-index: 10;
       }
 
       .esp-point::after {
@@ -281,7 +283,7 @@
         <div class="panel-section">
           <h2>Facility Map</h2>
           <p style="margin: 0; color: #6b7280; font-size: 14px">
-            Hover a sensor to view its name, status and measured distance.
+            Building floor plan with 50 ESP sensors in vertical rectangular layout (5x10) with natural spacing. Hover a sensor to view its name, status and measured distance.
           </p>
           <div class="legend" style="margin-top: 12px">
             <div class="legend-item">
@@ -298,10 +300,6 @@
       </section>
       <aside class="info-panel">
         <div class="panel-section">
-          <h2>Building Levels</h2>
-          <div id="levelSwitcher" class="level-switcher"></div>
-        </div>
-        <div class="panel-section">
           <h2>Overview</h2>
           <div class="status-summary" id="statusSummary"></div>
         </div>
@@ -315,189 +313,109 @@
     </main>
 
     <script>
-      const buildingLevels = [
-        {
-          id: "level-1",
-          label: "Level 1",
-          sensors: [
-            {
-              name: "ESP-North",
-              status: "active",
-              distance: "12.4 m",
-              top: 20,
-              left: 25,
-            },
-            {
-              name: "ESP-East",
-              status: "active",
-              distance: "9.8 m",
-              top: 35,
-              left: 70,
-            },
-            {
-              name: "ESP-West",
-              status: "inactive",
-              distance: "15.1 m",
-              top: 52,
-              left: 18,
-            },
-            {
-              name: "ESP-Lab",
-              status: "active",
-              distance: "7.2 m",
-              top: 55,
-              left: 58,
-            },
-            {
-              name: "ESP-Office",
-              status: "inactive",
-              distance: "5.9 m",
-              top: 72,
-              left: 40,
-            },
-            {
-              name: "ESP-Storage",
-              status: "active",
-              distance: "18.6 m",
-              top: 78,
-              left: 78,
-            },
-          ],
-        },
-        {
-          id: "level-2",
-          label: "Level 2",
-          sensors: [
-            {
-              name: "ESP-North 2",
-              status: "active",
-              distance: "11.1 m",
-              top: 18,
-              left: 30,
-            },
-            {
-              name: "ESP-East 2",
-              status: "inactive",
-              distance: "10.4 m",
-              top: 33,
-              left: 63,
-            },
-            {
-              name: "ESP-West 2",
-              status: "active",
-              distance: "8.6 m",
-              top: 48,
-              left: 20,
-            },
-            {
-              name: "ESP-Lab 2",
-              status: "active",
-              distance: "6.4 m",
-              top: 50,
-              left: 57,
-            },
-            {
-              name: "ESP-Office 2",
-              status: "inactive",
-              distance: "6.8 m",
-              top: 65,
-              left: 45,
-            },
-            {
-              name: "ESP-Storage 2",
-              status: "active",
-              distance: "14.2 m",
-              top: 75,
-              left: 75,
-            },
-          ],
-        },
-        {
-          id: "level-3",
-          label: "Level 3",
-          sensors: [
-            {
-              name: "ESP Research",
-              status: "inactive",
-              distance: "12.9 m",
-              top: 18,
-              left: 52,
-            },
-            {
-              name: "ESP South Hall",
-              status: "active",
-              distance: "20.4 m",
-              top: 32,
-              left: 75,
-            },
-            {
-              name: "ESP Admin",
-              status: "active",
-              distance: "9.3 m",
-              top: 38,
-              left: 33,
-            },
-            {
-              name: "ESP Data Center",
-              status: "inactive",
-              distance: "17.2 m",
-              top: 58,
-              left: 65,
-            },
-            {
-              name: "ESP Breakout",
-              status: "active",
-              distance: "13.7 m",
-              top: 68,
-              left: 35,
-            },
-            {
-              name: "ESP Atrium",
-              status: "active",
-              distance: "8.5 m",
-              top: 78,
-              left: 70,
-            },
-          ],
-        },
-      ];
+      // Generate 50 sensors with distance-based positioning
+      const cols = 5;
+      const rows = 10;
+      const totalSensors = cols * rows;
+      const sensors = [];
+      
+      // First, generate sensors with their distance measurements
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const sensorNum = row * cols + col + 1;
+          const isActive = Math.random() > 0.25;
+          const distance = (Math.random() * 20 + 5).toFixed(1);
+          
+          sensors.push({
+            name: `ESP-${String(sensorNum).padStart(2, '0')}`,
+            status: isActive ? "active" : "inactive",
+            distance: parseFloat(distance), // Store as number for calculations
+            distanceDisplay: `${distance} m`,
+            x: 0, // Will be calculated
+            y: 0, // Will be calculated
+          });
+        }
+      }
+      
+      // Distance-based positioning algorithm
+      // Use distance measurements to create a grid with natural spacing
+      function calculatePositions() {
+        const margin = 1; // 1% margin for zoomed out effect
+        const availableWidth = 100 - (2 * margin);
+        const availableHeight = 100 - (2 * margin);
+        
+        // Calculate average distance to determine spacing scale
+        const avgDistance = sensors.reduce((sum, s) => sum + s.distance, 0) / sensors.length;
+        const maxDistance = Math.max(...sensors.map(s => s.distance));
+        const minDistance = Math.min(...sensors.map(s => s.distance));
+        
+        // Use distance values to create irregular grid spacing
+        // Map distances to positions: larger distances = more spacing
+        const positions = [];
+        
+        for (let i = 0; i < sensors.length; i++) {
+          const row = Math.floor(i / cols);
+          const col = i % cols;
+          
+          // Base grid position
+          const baseLeft = margin + (col / (cols - 1)) * availableWidth;
+          const baseTop = margin + (row / (rows - 1)) * availableHeight;
+          
+          // Use distance measurement to add variation
+          // Normalize distance to 0-1 range
+          const distanceNorm = (sensors[i].distance - minDistance) / (maxDistance - minDistance || 1);
+          
+          // Add offset based on distance (sensors with larger distances spread out more)
+          const leftOffset = (Math.random() - 0.5) * 8 + (distanceNorm - 0.5) * 4;
+          const topOffset = (Math.random() - 0.5) * 6 + (distanceNorm - 0.5) * 3;
+          
+          positions.push({
+            x: Math.max(margin, Math.min(100 - margin, baseLeft + leftOffset)),
+            y: Math.max(margin, Math.min(100 - margin, baseTop + topOffset))
+          });
+        }
+        
+        // Normalize to ensure all sensors are visible and spread out
+        let minX = Math.min(...positions.map(p => p.x));
+        let maxX = Math.max(...positions.map(p => p.x));
+        let minY = Math.min(...positions.map(p => p.y));
+        let maxY = Math.max(...positions.map(p => p.y));
+        
+        // Ensure we have a range
+        if (maxX === minX) { maxX = minX + 1; }
+        if (maxY === minY) { maxY = minY + 1; }
+        
+        const rangeX = maxX - minX;
+        const rangeY = maxY - minY;
+        
+        // Scale to fit with margin
+        for (let i = 0; i < positions.length; i++) {
+          const normalizedX = ((positions[i].x - minX) / rangeX) * (100 - 2 * margin) + margin;
+          const normalizedY = ((positions[i].y - minY) / rangeY) * (100 - 2 * margin) + margin;
+          
+          sensors[i].left = normalizedX;
+          sensors[i].top = normalizedY;
+        }
+      }
+      
+      calculatePositions();
 
       const buildingGrid = document.getElementById("buildingGrid");
-      const levelSwitcher = document.getElementById("levelSwitcher");
       const statusSummary = document.getElementById("statusSummary");
       const relativeDistances = document.getElementById("relativeDistances");
-      let currentSensors = [];
+      let currentSensors = sensors;
       let selectedSensorName = null;
 
-      function renderLevelButtons() {
-        levelSwitcher.innerHTML = "";
-        buildingLevels.forEach((level, index) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = `level-button ${index === 0 ? "active" : ""}`;
-          button.textContent = level.label;
-          button.dataset.levelId = level.id;
-          button.addEventListener("click", () => setActiveLevel(level.id));
-          levelSwitcher.appendChild(button);
-        });
-      }
-
-      function setActiveLevel(levelId) {
-        document.querySelectorAll(".level-button").forEach((button) => {
-          button.classList.toggle("active", button.dataset.levelId === levelId);
-        });
-
-        const level = buildingLevels.find((lvl) => lvl.id === levelId);
-        if (!level) return;
-        renderSensors(level.sensors);
-        renderSummary(level.sensors);
-      }
-
-      function renderSensors(sensors) {
-        currentSensors = sensors;
+      function renderSensors() {
         selectedSensorName = null;
         buildingGrid.innerHTML = "";
-        sensors.forEach((sensor) => {
+        
+        // Calculate sensor size based on total count (more sensors = smaller dots)
+        // Base size decreases as sensor count increases
+        const baseSize = Math.max(8, 24 - (currentSensors.length * 0.2)); // Scales from 24px to 8px
+        document.documentElement.style.setProperty('--esp-size', `${baseSize}px`);
+        
+        currentSensors.forEach((sensor) => {
           const point = document.createElement("div");
           point.className = "esp-point";
           point.style.top = `${sensor.top}%`;
@@ -520,11 +438,12 @@
         });
         updateDistanceLabels();
         updateRelativePanel();
+        renderSummary();
       }
 
-      function renderSummary(sensors) {
-        const activeCount = sensors.filter((sensor) => sensor.status === "active").length;
-        const inactiveCount = sensors.length - activeCount;
+      function renderSummary() {
+        const activeCount = currentSensors.filter((sensor) => sensor.status === "active").length;
+        const inactiveCount = currentSensors.length - activeCount;
 
         statusSummary.innerHTML = `
           <div class="summary-card">
@@ -536,16 +455,19 @@
             <strong>${inactiveCount}</strong>
           </div>
           <div class="summary-card">
+            <span>Total Sensors</span>
+            <strong>${currentSensors.length}</strong>
+          </div>
+          <div class="summary-card">
             <span>Total Distance</span>
-            <strong>${sumDistances(sensors)}</strong>
+            <strong>${sumDistances(currentSensors)}</strong>
           </div>
         `;
       }
 
       function sumDistances(sensors) {
         const total = sensors.reduce((sum, sensor) => {
-          const value = parseFloat(sensor.distance);
-          return Number.isFinite(value) ? sum + value : sum;
+          return Number.isFinite(sensor.distance) ? sum + sensor.distance : sum;
         }, 0);
         return `${total.toFixed(1)} m`;
       }
@@ -584,10 +506,9 @@
       }
 
       function calculateRelativeDistance(sensorA, sensorB) {
-        const deltaX = sensorA.left - sensorB.left;
-        const deltaY = sensorA.top - sensorB.top;
-        const planarDistance = Math.hypot(deltaX, deltaY);
-        return planarDistance * 0.6;
+        // Use the average of both sensors' distance measurements as the relative distance
+        // This represents the actual measured distance between sensors
+        return (sensorA.distance + sensorB.distance) / 2;
       }
 
       function formatMeters(value) {
@@ -622,8 +543,7 @@
           });
       }
 
-      renderLevelButtons();
-      setActiveLevel(buildingLevels[0].id);
+      renderSensors();
     </script>
   </body>
 </html>

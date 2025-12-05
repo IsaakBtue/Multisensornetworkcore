@@ -22,6 +22,41 @@ app.post("/ingest", (req, res) => {
   res.json({ ok: true });
 });
 
+// HTTP Bridge endpoint for ESP32-S3 (accepts same format as Vercel endpoint)
+app.post("/api/ingest-http-bridge", (req, res) => {
+  const m = req.body;
+  
+  // Allow messages with just a "message" field (for connection notifications)
+  if (m && m.message) {
+    console.log("Connection message received:", m.message);
+    return res.status(200).json({ 
+      ok: true, 
+      message: "Connection message received"
+    });
+  }
+  
+  // Otherwise, require sensor data fields
+  if (
+    !m ||
+    typeof m.co2 !== "number" ||
+    typeof m.temperature !== "number" ||
+    typeof m.humidity !== "number"
+  ) {
+    return res.status(400).json({ ok: false, error: "Invalid payload" });
+  }
+
+  console.log("INGEST (via HTTP bridge):", req.body);
+  
+  // Broadcast to SSE clients
+  const payload = `data: ${JSON.stringify(m)}\n\n`;
+  clients.forEach((r) => r.write(payload));
+  
+  res.json({ 
+    ok: true, 
+    message: "Data received"
+  });
+});
+
 app.get("/events", (req, res) => {
   res.set({
     "Content-Type": "text/event-stream",

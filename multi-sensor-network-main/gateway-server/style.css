@@ -524,11 +524,12 @@ body {
 .building-grid {
     position: relative;
     width: 100%;
-    padding-top: 65%;
+    padding-top: 80%;
     background: radial-gradient(circle at center, rgba(255, 255, 255, 0.95) 0%, rgba(173, 238, 227, 0.5) 100%);
     border-radius: 24px;
     border: 1px dashed rgba(134, 222, 183, 0.7);
-    overflow: hidden;
+    overflow: visible;
+    min-height: 500px;
 }
 
 .humidity-insights {
@@ -589,15 +590,16 @@ body {
 
 .esp-point {
     position: absolute;
-    width: 20px;
-    height: 20px;
+    width: var(--esp-size, 16px);
+    height: var(--esp-size, 16px);
     border-radius: 50%;
     transform: translate(-50%, -50%);
     border: 2px solid rgba(255, 255, 255, 0.6);
     cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.9) 0%, rgba(16, 185, 129, 0.9) 40%, rgba(4, 120, 87, 0.95) 80%);
-    box-shadow: 0 0 20px rgba(16, 185, 129, 0.35);
+    box-shadow: 0 0 calc(var(--esp-size, 16px) * 0.9) rgba(16, 185, 129, 0.35);
+    z-index: 10;
 }
 
 .esp-point::after {

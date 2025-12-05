@@ -1,0 +1,148 @@
+PRESENTATION SCRIPT: Gateway Server Files
+================================================================================
+
+HTML, CSS, AND JAVASCRIPT DIFFERENCES
+--------------------------------------------------------------------------------
+HTML = Structure (skeleton) - defines WHAT content appears
+  Think: The bones of a webpage - where text, buttons, and images go
+
+CSS = Styling (appearance) - defines HOW things look
+  Think: The paint and decorations - colors, sizes, fonts, spacing
+
+JavaScript = Behavior (brain) - defines WHAT HAPPENS when users interact
+  Think: The smart systems - makes buttons work, fetches data, updates the page
+
+Analogy: HTML = house structure, CSS = paint/decorations, JS = electricity/smart systems
+
+FILE STRUCTURE
+--------------------------------------------------------------------------------
+
+1. index.html
+Purpose: Main dashboard page structure
+- 2x2 quadrant layout (Map, Humidity, Temperature, CO2)
+- Navigation bar, hero section, facility map
+- Links to style.css and script.js
+  (Links = tells browser to also load those files)
+Example: <div class="sensor-card"><h2>Temperature</h2></div>
+
+2. script.js
+Purpose: Interactive logic and data fetching
+- Fetches data from Open-Meteo API every 3 seconds
+  (API = Application Programming Interface - like a website that gives you data)
+  (Fetches = goes to the internet and asks for information)
+- Updates charts and sensor values automatically
+- Handles facility map interactions (clicking, hovering)
+Example: async function getSensorData() { fetch(apiUrl)... }
+  (async function = a function that can wait for internet requests to finish)
+
+3. style.css
+Purpose: Visual design and layout
+- Color scheme (mint #ADEEE3, teal #86DEB7)
+  (#ADEEE3 = a color code, like a paint color number)
+- 2x2 grid layout, unified card styling
+  (Grid = like a table with 2 rows and 2 columns)
+- Responsive design
+  (Responsive = automatically adjusts for phone/tablet screens)
+Example: .dashboard-grid { display: grid; grid-template-columns: repeat(2, 1fr); }
+  (This creates a 2-column grid where each column takes equal space)
+
+4. about.html
+Purpose: Team information page
+- TU/e team introduction, mission statement
+- System diagram image
+- Technical specifications
+
+5. contact.html
+Purpose: Contact form page
+- Form fields: Name, Email, Organization, Phone, Message
+- Validation (checks if email is valid format, if required fields are filled)
+- Consistent styling (looks the same as other pages)
+
+6. index.js
+Purpose: Express.js backend server
+  (Backend = the part that runs on the server, not in your browser)
+  (Express.js = a tool that makes it easy to create a web server)
+  
+- POST /ingest: Receives sensor data from ESP32
+  (POST = a way to send data TO the server, like submitting a form)
+  (ESP32 = our sensor device that measures temperature, humidity, CO2)
+  (/ingest = the address/URL where data gets sent, like a mailbox)
+  
+- GET /events: SSE stream for real-time updates
+  (GET = a way to REQUEST data FROM the server, like asking for information)
+  (SSE stream = Server-Sent Events - like a live TV channel that keeps sending 
+   new data automatically. Instead of refreshing the page, new sensor readings 
+   just appear automatically. Think of it like a live sports score that updates 
+   on your phone without you clicking refresh.)
+  
+- Serves all static files
+  (Serves = sends files to your browser when you request them)
+  (Static files = files that don't change, like HTML, CSS, images - opposite of 
+   dynamic content that's generated on the fly. Like serving a photo vs taking 
+   a new photo each time.)
+  
+Example: app.post("/ingest", (req, res) => { ... })
+  (This code says: "When someone sends data to /ingest, do something with it")
+
+7. package.json
+Purpose: npm configuration
+  (npm = Node Package Manager - like an app store for code libraries)
+  (Configuration = settings that tell the computer what to do)
+- Dependencies: express, cors
+  (Dependencies = code libraries we need, like express for the server and cors 
+   for allowing cross-origin requests. CORS = Cross-Origin Resource Sharing - 
+   allows our webpage to talk to servers on different websites. Without it, 
+   browsers block requests for security reasons.)
+- Script: "npm start" runs server
+  (Script = a command you type to start the program)
+
+8. template/esp-status-dashboard.html
+Purpose: Standalone template file for the facility map visualization
+  (Template = a starting point or example that we copied from)
+  (Standalone = works by itself, doesn't need other files)
+  
+- Self-contained HTML file with embedded CSS and JavaScript
+  (Embedded = the CSS and JavaScript code is written directly inside the HTML file,
+   instead of being in separate files. Like having everything in one document.)
+  
+- Interactive facility map showing ESP sensor locations
+  (Interactive = you can click and hover on things)
+  (ESP sensors = our temperature/humidity/CO2 measuring devices)
+  
+- Features: Level switching (Level 1, 2, 3), sensor status (online/offline), 
+  relative distance calculations
+  (Relative distance = how far sensors are from each other, like "Sensor A is 
+   5 meters from Sensor B")
+  
+- We copied this code into our main index.html
+  (We took the good parts from this template and integrated them into our 
+   dashboard, so now the facility map is part of the main page)
+
+HOW IT WORKS TOGETHER
+--------------------------------------------------------------------------------
+1. Browser loads index.html (structure)
+   (Browser = Chrome, Firefox, Edge - the program you use to view websites)
+
+2. Browser applies style.css (styling)
+   (Applies = uses the CSS rules to make things look pretty)
+
+3. Browser executes script.js (behavior)
+   (Executes = runs the code, makes things interactive)
+
+4. script.js fetches data every 3 seconds and updates HTML
+   (Updates = changes the numbers and graphs on the page automatically)
+
+5. index.js serves files and receives ESP32 sensor data
+   (Receives = gets data sent from the sensors)
+
+6. All pages share same CSS for consistency
+   (Consistency = everything looks the same, professional)
+
+SUMMARY
+--------------------------------------------------------------------------------
+- 3 HTML files (structure): index.html, about.html, contact.html
+- 1 CSS file (styling): style.css
+- 2 JS files (behavior): script.js (frontend), index.js (backend)
+  (Frontend = runs in your browser, Backend = runs on the server)
+- 1 config file: package.json
+

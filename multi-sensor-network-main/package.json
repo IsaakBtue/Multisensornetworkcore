@@ -1,0 +1,7 @@
+{
+  "type": "module",
+  "name": "multi-sensor-network",
+  "version": "1.0.0",
+  "description": "Multi-sensor network API and dashboard"
+}
+

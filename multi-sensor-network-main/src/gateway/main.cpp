@@ -4,6 +4,9 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#if defined(ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32S3)
+#include <esp_mac.h>
+#endif
 
 #include "config.h"
 #include "espnow_comm.h" // ESP-NOW communication
@@ -86,6 +89,28 @@ void connectToWiFi() {
             Serial.println("This will cause connection issues. Check DNS settings.");
         }
         
+        // Test Cloudflare Worker DNS resolution
+        String workerUrl = String(SUPABASE_EDGE_FUNCTION_URL);
+        int protocolEnd = workerUrl.indexOf("://");
+        if (protocolEnd > 0) {
+            String domain = workerUrl.substring(protocolEnd + 3);
+            int pathStart = domain.indexOf("/");
+            if (pathStart > 0) {
+                domain = domain.substring(0, pathStart);
+            }
+            Serial.print("Testing DNS with Cloudflare Worker: ");
+            Serial.print(domain);
+            Serial.print("... ");
+            IPAddress workerIP;
+            if (WiFi.hostByName(domain.c_str(), workerIP) == 1) {
+                Serial.print("SUCCESS! IP: ");
+                Serial.println(workerIP);
+            } else {
+                Serial.println("FAILED - Worker domain may not resolve");
+                Serial.println("This will cause connection issues.");
+            }
+        }
+        
         Serial.print("Gateway will forward data to: ");
         Serial.println(SUPABASE_EDGE_FUNCTION_URL);
     } else {
@@ -95,11 +120,17 @@ void connectToWiFi() {
 }
 
 void setup() {
+    // Initialize serial communication (use COM USB-C port for programming/serial monitor)
     Serial.begin(115200);
+    // Wait for serial port to connect (important for ESP32-S3 with dual USB ports)
+    // Use COM port (USB-to-UART) for serial communication
+    while (!Serial && millis() < 3000) {
+        delay(10);
+    }
     delay(500);
 
     Serial.println("\n========================================");
-    Serial.println("=== ESP32 Gateway Starting ===");
+    Serial.println("=== ESP32-S3 Gateway Starting ===");
     Serial.println("========================================\n");
     
     Serial.println("Step 1: Connecting to WiFi...");
@@ -118,7 +149,12 @@ void setup() {
     // Print gateway MAC address for debugging
     Serial.print("Gateway MAC Address: ");
     uint8_t gatewayMac[6];
+#if defined(ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32S3)
+    // ESP32-S3 uses ESP_MAC_WIFI_SOFTAP or ESP_MAC_WIFI_STA
     esp_read_mac(gatewayMac, ESP_MAC_WIFI_STA);
+#else
+    esp_read_mac(gatewayMac, ESP_MAC_WIFI_STA);
+#endif
     for (int i = 0; i < 6; ++i) {
         Serial.printf("%02X", gatewayMac[i]);
         if (i < 5) Serial.print(":");
