@@ -1,0 +1,9 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "cd gateway-server && npm install"
+
+[deploy]
+startCommand = "cd gateway-server && node index.js"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
