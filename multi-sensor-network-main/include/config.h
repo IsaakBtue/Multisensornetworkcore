@@ -28,12 +28,11 @@ bool needCalibration = true;      // set to true by default, turned into false i
 #define WIFI_SSID      "Odido-20E8A1"
 #define WIFI_PASSWORD  "N3GMVKDJQA9EYQRF"
 
-// Using HTTP to Railway/Render cloud server (always online, no PC needed)
+// Using HTTP to Railway cloud server (always online, no PC needed)
 // ESP32-S3 Arduino framework 3.3.4 doesn't have WiFiClientSecure
-// Railway/Render accept HTTP connections and run 24/7
-// IMPORTANT: Replace YOUR-RAILWAY-URL with your Railway URL (or Render URL)
-// Get URL from: Railway dashboard → Settings → Networking → Generate Domain
-#define SUPABASE_EDGE_FUNCTION_URL "http://YOUR-RAILWAY-URL.up.railway.app/api/ingest-http-bridge"
+// Railway accepts HTTP connections and runs 24/7
+// HTTP works perfectly with Railway (tested and confirmed)
+#define SUPABASE_EDGE_FUNCTION_URL "http://multisensor.up.railway.app/api/ingest-http-bridge"
 
 // API key for Supabase Edge Function authentication
 // This matches the TELEMETRY_API_KEY secret set in Supabase
